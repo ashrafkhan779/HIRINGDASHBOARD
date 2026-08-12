@@ -1,0 +1,1625 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>HR Hiring Cost &amp; Vacancy Management</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+<style>
+/* ============================================================
+   DESIGN TOKENS — corporate HR SaaS: light surfaces, navy accents,
+   monospaced tabular numerals for auditable AED figures.
+   ============================================================ */
+:root{
+  --navy:#1f2a44; --navy-700:#2c3a5e; --accent:#2f6fed; --accent-soft:#e8f0fe;
+  --bg:#f4f6fa; --surface:#ffffff; --surface-2:#fafbfc;
+  --border:#e6e9f0; --border-strong:#d4d9e4;
+  --text:#1b2333; --text-2:#5a6478; --text-3:#8b93a6;
+  --good:#1e9e6a; --good-bg:#e6f6ee; --warn:#c98a12; --warn-bg:#fdf3e0;
+  --bad:#d1495b; --bad-bg:#fbe9ec; --info:#2f6fed; --info-bg:#e8f0fe;
+  --purple:#7b5ea7; --purple-bg:#f0ebf8; --teal:#178a94; --teal-bg:#e2f4f5;
+  --radius:10px; --radius-sm:7px;
+  --shadow:0 1px 2px rgba(27,35,51,.04),0 2px 8px rgba(27,35,51,.05);
+  --shadow-lg:0 8px 30px rgba(27,35,51,.14);
+  --sidebar-w:238px; --mono:'IBM Plex Mono',ui-monospace,SFMono-Regular,Menlo,monospace;
+}
+*{box-sizing:border-box}
+html,body{margin:0;padding:0}
+body{font-family:'Inter',system-ui,-apple-system,Segoe UI,Roboto,sans-serif;background:var(--bg);color:var(--text);font-size:14px;line-height:1.5;-webkit-font-smoothing:antialiased}
+.num,.mono{font-family:var(--mono);font-variant-numeric:tabular-nums;font-feature-settings:"tnum"}
+h1,h2,h3,h4{margin:0;font-weight:600;letter-spacing:-.01em}
+a{color:var(--accent);text-decoration:none}
+button{font-family:inherit;cursor:pointer}
+::-webkit-scrollbar{height:10px;width:10px}
+::-webkit-scrollbar-thumb{background:#cfd5e2;border-radius:6px;border:2px solid var(--bg)}
+::-webkit-scrollbar-thumb:hover{background:#b9c0d1}
+
+.app{display:flex;min-height:100vh}
+.sidebar{width:var(--sidebar-w);background:var(--navy);color:#c7cfe0;position:fixed;inset:0 auto 0 0;display:flex;flex-direction:column;z-index:40;transition:transform .22s ease}
+.brand{padding:20px 20px 16px;display:flex;align-items:center;gap:11px;border-bottom:1px solid rgba(255,255,255,.07)}
+.brand .logo{width:34px;height:34px;border-radius:8px;flex:none;background:#2f6fed;display:grid;place-items:center;color:#fff;font-weight:700;font-size:14px}
+.brand .t{color:#fff;font-weight:600;font-size:14.5px;line-height:1.2}
+.brand .s{color:#8b96b3;font-size:11px;font-weight:500}
+.nav{padding:12px;flex:1;overflow-y:auto}
+.nav-label{font-size:10.5px;letter-spacing:.09em;text-transform:uppercase;color:#6d7897;padding:12px 12px 6px;font-weight:600}
+.nav a{display:flex;align-items:center;gap:11px;padding:9px 12px;border-radius:8px;color:#c7cfe0;font-weight:500;font-size:13.5px;margin-bottom:2px;transition:.13s;cursor:pointer}
+.nav a:hover{background:rgba(255,255,255,.06);color:#fff}
+.nav a.active{background:var(--accent);color:#fff}
+.nav a svg{width:17px;height:17px;flex:none;opacity:.9}
+.nav a .badge{margin-left:auto;font-size:11px;background:rgba(255,255,255,.14);padding:1px 7px;border-radius:20px;font-family:var(--mono)}
+.nav a.active .badge{background:rgba(255,255,255,.22)}
+.sidebar-foot{padding:14px 16px;border-top:1px solid rgba(255,255,255,.07);font-size:11px;color:#6d7897;line-height:1.6}
+.dirty-dot{display:inline-block;width:7px;height:7px;border-radius:50%;background:#f0b429;margin-right:6px;box-shadow:0 0 0 3px rgba(240,180,41,.18)}
+
+.main{margin-left:var(--sidebar-w);flex:1;min-width:0;display:flex;flex-direction:column}
+.topbar{position:sticky;top:0;z-index:30;background:rgba(255,255,255,.88);backdrop-filter:blur(8px);border-bottom:1px solid var(--border);padding:0 26px;height:60px;display:flex;align-items:center;gap:16px}
+.topbar h1{font-size:17px;font-weight:600}
+.global-search{margin-left:auto;position:relative;width:320px;max-width:40vw}
+.global-search input{width:100%;padding:8px 12px 8px 34px;border:1px solid var(--border-strong);border-radius:8px;background:var(--surface-2);font-size:13px;font-family:inherit;color:var(--text)}
+.global-search input:focus{outline:none;border-color:var(--accent);background:#fff;box-shadow:0 0 0 3px var(--accent-soft)}
+.global-search svg{position:absolute;left:11px;top:9px;width:15px;height:15px;color:var(--text-3)}
+.search-results{position:absolute;top:44px;left:0;right:0;background:#fff;border:1px solid var(--border);border-radius:10px;box-shadow:var(--shadow-lg);max-height:60vh;overflow:auto;display:none;z-index:60;padding:6px}
+.search-results.open{display:block}
+.sr-item{padding:9px 11px;border-radius:7px;cursor:pointer;display:flex;gap:10px;align-items:center}
+.sr-item:hover,.sr-item.hi{background:var(--surface-2)}
+.sr-item .sr-id{font-family:var(--mono);font-size:11px;color:var(--accent);font-weight:600;flex:none}
+.sr-empty{padding:16px;text-align:center;color:var(--text-3);font-size:13px}
+.hamburger{display:none;background:none;border:1px solid var(--border-strong);border-radius:8px;width:38px;height:38px;place-items:center;color:var(--text-2)}
+.content{padding:22px 26px 60px;max-width:1520px;width:100%}
+
+.filterbar{display:flex;flex-wrap:wrap;gap:10px;align-items:flex-end;background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:14px 16px;margin-bottom:18px;box-shadow:var(--shadow)}
+.filt{display:flex;flex-direction:column;gap:5px}
+.filt label{font-size:11px;font-weight:600;color:var(--text-3);text-transform:uppercase;letter-spacing:.04em}
+.filt select,.filt input{padding:7px 10px;border:1px solid var(--border-strong);border-radius:7px;background:#fff;font-family:inherit;font-size:13px;color:var(--text);min-width:128px}
+.filt select:focus,.filt input:focus{outline:none;border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-soft)}
+.btn{padding:8px 14px;border-radius:8px;border:1px solid var(--border-strong);background:#fff;color:var(--text);font-weight:600;font-size:13px;display:inline-flex;align-items:center;gap:7px;transition:.13s}
+.btn:hover{background:var(--surface-2);border-color:var(--text-3)}
+.btn svg{width:15px;height:15px}
+.btn.primary{background:var(--accent);border-color:var(--accent);color:#fff}
+.btn.primary:hover{background:#2560d8}
+.btn.ghost{border-color:transparent;background:transparent;color:var(--text-2)}
+.btn.ghost:hover{background:var(--surface-2)}
+.btn.danger{background:var(--bad);border-color:var(--bad);color:#fff}
+.btn.danger:hover{background:#bb3d4e}
+.btn.sm{padding:5px 10px;font-size:12px}
+.spacer{flex:1}
+
+.kpi-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(212px,1fr));gap:13px;margin-bottom:18px}
+.kpi{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:15px 16px;box-shadow:var(--shadow)}
+.kpi .k-top{display:flex;align-items:center;gap:8px;margin-bottom:9px}
+.kpi .k-ic{width:30px;height:30px;border-radius:8px;display:grid;place-items:center;flex:none}
+.kpi .k-ic svg{width:16px;height:16px}
+.kpi .k-label{font-size:11.5px;color:var(--text-2);font-weight:600}
+.kpi .k-val{font-size:22px;font-weight:600;letter-spacing:-.02em;color:var(--text);line-height:1.1;font-family:var(--mono);font-variant-numeric:tabular-nums}
+.kpi .k-val .cur{font-size:11px;color:var(--text-3);font-weight:600;margin-right:3px;font-family:'Inter'}
+.kpi .k-sub{font-size:11.5px;color:var(--text-3);margin-top:5px;font-weight:500}
+.ic-blue{background:var(--info-bg);color:var(--info)} .ic-green{background:var(--good-bg);color:var(--good)}
+.ic-amber{background:var(--warn-bg);color:var(--warn)} .ic-red{background:var(--bad-bg);color:var(--bad)}
+.ic-purple{background:var(--purple-bg);color:var(--purple)} .ic-teal{background:var(--teal-bg);color:var(--teal)}
+.ic-navy{background:#e9edf6;color:var(--navy)}
+
+.grid{display:grid;gap:16px}
+.card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);box-shadow:var(--shadow)}
+.card-h{padding:14px 18px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:10px}
+.card-h h3{font-size:14px}
+.card-h .hint{font-size:11.5px;color:var(--text-3);font-weight:500}
+.card-h .spacer{flex:1}
+.card-b{padding:16px 18px}
+.chart-wrap{position:relative;height:290px}
+.chart-wrap.sm{height:250px}
+.two-col{grid-template-columns:1fr 1fr}
+.section-title{font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--text-3);margin:24px 0 12px;display:flex;align-items:center;gap:10px}
+
+.table-scroll{overflow-x:auto}
+table.tbl{width:100%;border-collapse:collapse;font-size:13px}
+table.tbl th{text-align:left;padding:10px 12px;font-size:11px;font-weight:700;color:var(--text-3);text-transform:uppercase;letter-spacing:.04em;border-bottom:1px solid var(--border);white-space:nowrap;background:var(--surface-2)}
+table.tbl th.sortable{cursor:pointer;user-select:none}
+table.tbl th.sortable:hover{color:var(--text)}
+table.tbl th .arr{opacity:.35;font-size:10px;margin-left:3px}
+table.tbl th.sorted{color:var(--accent)}
+table.tbl th.sorted .arr{opacity:1}
+table.tbl td{padding:10px 12px;border-bottom:1px solid var(--border);vertical-align:middle;white-space:nowrap}
+table.tbl tr:last-child td{border-bottom:none}
+table.tbl tbody tr.clickable{cursor:pointer}
+table.tbl tbody tr.clickable:hover{background:#f8fafd}
+table.tbl td.r,table.tbl th.r{text-align:right}
+.tbl-total td{font-weight:700;background:var(--surface-2);border-top:2px solid var(--border-strong)}
+.matrix td.r,.matrix th.r{font-family:var(--mono);font-variant-numeric:tabular-nums}
+.matrix td.zero{color:var(--text-3);opacity:.5}
+.pos-name{font-weight:600;color:var(--text)}
+.muted{color:var(--text-3)}
+
+.badge-status{display:inline-flex;align-items:center;gap:5px;padding:2px 9px;border-radius:20px;font-size:11.5px;font-weight:600;white-space:nowrap}
+.badge-status::before{content:"";width:6px;height:6px;border-radius:50%;background:currentColor}
+.st-Planned{background:#eef1f6;color:#5a6478} .st-Open{background:var(--info-bg);color:#2560d8}
+.st-Interviewing{background:var(--purple-bg);color:var(--purple)} .st-Offer{background:var(--warn-bg);color:var(--warn)}
+.st-Hired{background:var(--good-bg);color:var(--good)} .st-OnHold{background:#eef1f6;color:#8b93a6}
+.st-Cancelled{background:var(--bad-bg);color:var(--bad)}
+.tag{display:inline-block;padding:2px 8px;border-radius:6px;font-size:11.5px;font-weight:600;background:#eef1f6;color:var(--text-2)}
+
+.act-wrap{position:relative;display:inline-block}
+.act-btn{width:30px;height:30px;border-radius:7px;border:1px solid var(--border);background:#fff;display:grid;place-items:center;color:var(--text-2)}
+.act-btn:hover{background:var(--surface-2);color:var(--text)}
+.act-menu{position:absolute;right:0;top:34px;background:#fff;border:1px solid var(--border);border-radius:9px;box-shadow:var(--shadow-lg);padding:5px;min-width:152px;z-index:70;display:none}
+.act-menu.open{display:block}
+.act-menu button{width:100%;text-align:left;padding:8px 10px;border:none;background:none;border-radius:6px;font-size:13px;color:var(--text);display:flex;align-items:center;gap:9px;font-weight:500}
+.act-menu button:hover{background:var(--surface-2)}
+.act-menu button.del{color:var(--bad)}
+.act-menu button svg{width:14px;height:14px}
+.act-menu .sep{height:1px;background:var(--border);margin:4px 0}
+
+.pager{display:flex;align-items:center;gap:6px;padding:12px 18px;justify-content:flex-end;font-size:13px;color:var(--text-2);flex-wrap:wrap}
+.pager .info{margin-right:auto;color:var(--text-3);font-size:12.5px}
+.pager button{min-width:32px;height:32px;padding:0 8px;border-radius:7px;border:1px solid var(--border-strong);background:#fff;color:var(--text-2)}
+.pager button:hover:not(:disabled){background:var(--surface-2)}
+.pager button:disabled{opacity:.4;cursor:default}
+.pager button.on{background:var(--accent);border-color:var(--accent);color:#fff}
+
+.overlay{position:fixed;inset:0;background:rgba(20,26,40,.44);z-index:100;display:none;opacity:0;transition:opacity .18s}
+.overlay.open{display:block;opacity:1}
+.drawer{position:fixed;top:0;right:0;bottom:0;width:660px;max-width:96vw;background:var(--surface);z-index:101;box-shadow:var(--shadow-lg);transform:translateX(100%);transition:transform .24s ease;display:flex;flex-direction:column}
+.drawer.open{transform:translateX(0)}
+.drawer-h{padding:18px 22px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:12px}
+.drawer-h h2{font-size:16px}
+.drawer-h .sub{font-size:12px;color:var(--text-3);font-family:var(--mono);margin-top:2px}
+.drawer-h .x{margin-left:auto;width:34px;height:34px;border-radius:8px;border:1px solid var(--border);background:#fff;display:grid;place-items:center;color:var(--text-2);flex:none}
+.drawer-h .x:hover{background:var(--surface-2)}
+.drawer-b{padding:20px 22px;overflow-y:auto;flex:1}
+.drawer-f{padding:14px 22px;border-top:1px solid var(--border);display:flex;gap:10px;justify-content:flex-end;background:var(--surface-2)}
+
+.form-sec{margin-bottom:20px}
+.form-sec-t{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--accent);margin-bottom:11px;display:flex;align-items:center;gap:8px}
+.form-sec-t .freq{margin-left:auto;font-size:10.5px;color:var(--text-3);background:var(--surface-2);border:1px solid var(--border);padding:2px 8px;border-radius:20px;font-weight:600;letter-spacing:0;text-transform:none}
+.form-grid{display:grid;grid-template-columns:1fr 1fr;gap:13px}
+.fg{display:flex;flex-direction:column;gap:5px}
+.fg.full{grid-column:1 / -1}
+.fg label{font-size:12px;font-weight:600;color:var(--text-2)}
+.fg label .req{color:var(--bad)}
+.fg input,.fg select{padding:8px 11px;border:1px solid var(--border-strong);border-radius:7px;font-family:inherit;font-size:13px;color:var(--text);background:#fff;width:100%}
+.fg input:focus,.fg select:focus{outline:none;border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-soft)}
+.fg .cur-in{position:relative}
+.fg .cur-in input{padding-left:42px;font-family:var(--mono)}
+.fg .cur-in::before{content:"AED";position:absolute;left:11px;top:9px;font-size:11px;color:var(--text-3);font-weight:600;pointer-events:none}
+.fg .err-msg{font-size:11.5px;color:var(--bad);font-weight:500;display:none}
+.fg.invalid input,.fg.invalid select{border-color:var(--bad);box-shadow:0 0 0 3px var(--bad-bg)}
+.fg.invalid .err-msg{display:block}
+.calc-preview{background:var(--surface-2);border:1px solid var(--border);border-radius:9px;padding:13px 15px}
+.calc-preview .cp-row{display:flex;justify-content:space-between;padding:4px 0;font-size:12.5px;color:var(--text-2)}
+.calc-preview .cp-row span:last-child{font-family:var(--mono);color:var(--text);font-weight:500}
+.calc-preview .cp-row.total{border-top:1px solid var(--border-strong);margin-top:5px;padding-top:8px;font-weight:700;font-size:14px;color:var(--text)}
+
+.detail-grid{display:grid;grid-template-columns:1fr 1fr;gap:14px 22px;margin-bottom:8px}
+.d-item .d-l{font-size:11px;color:var(--text-3);font-weight:600;text-transform:uppercase;letter-spacing:.03em}
+.d-item .d-v{font-size:14px;font-weight:600;color:var(--text);margin-top:2px}
+.cost-cat{margin-top:16px}
+.cost-cat h4{font-size:12px;text-transform:uppercase;letter-spacing:.04em;color:var(--text-3);margin-bottom:8px;display:flex;justify-content:space-between}
+.cost-cat h4 span:last-child{font-family:var(--mono);color:var(--text-2)}
+.cost-line{display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px dashed var(--border);font-size:13px;color:var(--text-2)}
+.cost-line span:last-child{font-family:var(--mono);font-weight:500;color:var(--text)}
+.tl-bars{display:flex;align-items:flex-end;gap:2px;height:120px;padding:8px 0 26px;overflow-x:auto}
+.tl-col{flex:1;min-width:16px;display:flex;flex-direction:column;align-items:center;gap:0;position:relative;height:100%;justify-content:flex-end}
+.tl-col .bar{width:70%;background:var(--accent);border-radius:3px 3px 0 0;min-height:2px}
+.tl-col .bar.hl{background:var(--warn)}
+.tl-col .lb{position:absolute;bottom:-22px;font-size:8.5px;color:var(--text-3);transform:rotate(-50deg);white-space:nowrap;font-family:var(--mono);transform-origin:top left;left:50%}
+.tl-col:hover .bar{opacity:.8}
+.tl-table{margin-top:26px}
+
+.co-cards{display:grid;grid-template-columns:repeat(auto-fill,minmax(232px,1fr));gap:13px}
+.co-card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:16px;box-shadow:var(--shadow);cursor:pointer;transition:.15s}
+.co-card:hover{border-color:var(--accent);box-shadow:var(--shadow-lg);transform:translateY(-1px)}
+.co-card.active{border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-soft)}
+.co-card .co-name{font-size:15px;font-weight:600;margin-bottom:3px}
+.co-card .co-meta{font-size:11.5px;color:var(--text-3);margin-bottom:12px}
+.co-card .co-stat{display:flex;justify-content:space-between;padding:4px 0;font-size:12.5px;color:var(--text-2)}
+.co-card .co-stat span:last-child{font-family:var(--mono);font-weight:600;color:var(--text)}
+
+.insights{display:grid;grid-template-columns:repeat(auto-fill,minmax(285px,1fr));gap:12px}
+.insight{display:flex;gap:12px;background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:14px 15px;box-shadow:var(--shadow)}
+.insight .i-ic{width:34px;height:34px;border-radius:9px;flex:none;display:grid;place-items:center}
+.insight .i-ic svg{width:17px;height:17px}
+.insight .i-t{font-size:12px;color:var(--text-3);font-weight:600}
+.insight .i-v{font-size:14px;font-weight:600;margin-top:2px;line-height:1.35}
+
+.empty{text-align:center;padding:48px 20px;color:var(--text-3)}
+.empty svg{width:42px;height:42px;opacity:.4;margin-bottom:12px}
+.empty h4{font-size:15px;color:var(--text-2);margin-bottom:5px}
+.empty p{font-size:13px;max-width:380px;margin:0 auto}
+
+.toast-wrap{position:fixed;bottom:22px;right:22px;z-index:200;display:flex;flex-direction:column;gap:8px}
+.toast{background:var(--navy);color:#fff;padding:12px 16px;border-radius:9px;box-shadow:var(--shadow-lg);font-size:13px;font-weight:500;display:flex;align-items:center;gap:10px;min-width:220px;animation:slidein .2s ease}
+.toast.good{background:#186a4a} .toast.bad{background:#b23347}
+.toast svg{width:17px;height:17px;flex:none}
+@keyframes slidein{from{transform:translateX(20px);opacity:0}to{transform:translateX(0);opacity:1}}
+
+#loader{position:fixed;inset:0;background:var(--bg);z-index:300;display:grid;place-items:center}
+.spinner{width:38px;height:38px;border:3px solid var(--border-strong);border-top-color:var(--accent);border-radius:50%;animation:spin .8s linear infinite;margin:0 auto}
+@keyframes spin{to{transform:rotate(360deg)}}
+#loader .lt{margin-top:14px;color:var(--text-2);font-size:13px;font-weight:500}
+.load-error{max-width:560px;margin:8vh auto;background:#fff;border:1px solid var(--border);border-radius:var(--radius);padding:28px;box-shadow:var(--shadow);text-align:left}
+.load-error h3{color:var(--bad);margin-bottom:10px}
+.load-error code{background:var(--surface-2);padding:2px 7px;border-radius:5px;font-family:var(--mono);font-size:12.5px;border:1px solid var(--border)}
+.load-error pre{background:var(--navy);color:#e5ebf5;padding:12px 14px;border-radius:8px;font-size:12.5px;overflow-x:auto;margin-top:10px}
+
+.page{display:none}
+.page.active{display:block}
+.seg{display:inline-flex;background:var(--surface-2);border:1px solid var(--border-strong);border-radius:8px;padding:3px;gap:2px}
+.seg button{border:none;background:none;padding:6px 12px;border-radius:6px;font-size:12.5px;font-weight:600;color:var(--text-2)}
+.seg button.on{background:#fff;color:var(--accent);box-shadow:var(--shadow)}
+
+@media(max-width:1100px){.two-col{grid-template-columns:1fr}}
+@media(max-width:860px){
+  .sidebar{transform:translateX(-100%)} .sidebar.open{transform:translateX(0)}
+  .main{margin-left:0} .hamburger{display:grid} .global-search{width:auto;flex:1}
+  .content{padding:16px} .form-grid{grid-template-columns:1fr} .detail-grid{grid-template-columns:1fr}
+}
+</style>
+</head>
+<body>
+<div id="loader"><div style="text-align:center"><div class="spinner"></div><div class="lt" id="loaderText">Loading hiring data…</div></div></div>
+
+<div class="app" id="app" style="display:none">
+  <aside class="sidebar" id="sidebar">
+    <div class="brand">
+      <div class="logo">HR</div>
+      <div><div class="t">Hiring &amp; Cost</div><div class="s">Workforce Planning</div></div>
+    </div>
+    <nav class="nav" id="nav"></nav>
+    <div class="sidebar-foot" id="sideFoot"></div>
+  </aside>
+  <div class="main">
+    <header class="topbar">
+      <button class="hamburger" id="hamburger" aria-label="Menu"></button>
+      <div><h1 id="pageTitle">Overview</h1></div>
+      <div class="global-search">
+        <span id="searchIcon"></span>
+        <input id="globalSearch" placeholder="Search vacancy, position, company…" autocomplete="off" />
+        <div class="search-results" id="searchResults"></div>
+      </div>
+    </header>
+    <div class="content"><div id="pages"></div></div>
+  </div>
+</div>
+
+<div class="overlay" id="overlay"></div>
+<aside class="drawer" id="drawer">
+  <div class="drawer-h">
+    <div><h2 id="drawerTitle">Vacancy</h2><div class="sub" id="drawerSub"></div></div>
+    <button class="x" id="drawerClose"></button>
+  </div>
+  <div class="drawer-b" id="drawerBody"></div>
+  <div class="drawer-f" id="drawerFoot"></div>
+</aside>
+
+<div class="toast-wrap" id="toastWrap"></div>
+
+<script>
+window.APP_DATA_URL = 'data.json';
+/* Application logic is injected below (single-file build). */
+</script>
+<script>
+/* ============================================================================
+   HR Hiring Cost & Vacancy Management — application logic
+   Vanilla JS. No build step. Data model: see data.json (metadata/columns/vacancies).
+
+   Cost-frequency rules (keyed to spreadsheet column letters):
+     M-O one-time      -> charged once, in the hiring month
+     P-R + Y monthly   -> every month from the hiring month onward
+     S  & Z two-year   -> hiring month, then every 24 months
+     T-X annual        -> hiring month, then every 12 months (anniversaries)
+   The "2-Year Employment Cost" is RECALCULATED, never trusted from the sheet.
+   ========================================================================== */
+(function () {
+"use strict";
+
+/* ------------------------------------------------------------------ icons */
+const I = {
+  grid:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>',
+  calendar:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="17" rx="2"/><path d="M3 9h18M8 2v4M16 2v4"/></svg>',
+  chart:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 3v18h18"/><rect x="7" y="11" width="3" height="7"/><rect x="12" y="7" width="3" height="11"/><rect x="17" y="13" width="3" height="5"/></svg>',
+  briefcase:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="7" width="20" height="14" rx="2"/><path d="M8 7V5a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2M2 13h20"/></svg>',
+  users:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87M16 3.13A4 4 0 0 1 16 11"/></svg>',
+  building:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="4" y="2" width="16" height="20" rx="1"/><path d="M9 22v-4h6v4M8 6h.01M12 6h.01M16 6h.01M8 10h.01M12 10h.01M16 10h.01M8 14h.01M12 14h.01M16 14h.01"/></svg>',
+  layers:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2 2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/></svg>',
+  settings:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>',
+  menu:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 12h18M3 6h18M3 18h18"/></svg>',
+  search:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>',
+  x:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6 6 18M6 6l12 12"/></svg>',
+  dots:'<svg viewBox="0 0 24 24" fill="currentColor"><circle cx="12" cy="5" r="2"/><circle cx="12" cy="12" r="2"/><circle cx="12" cy="19" r="2"/></svg>',
+  plus:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg>',
+  eye:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7z"/><circle cx="12" cy="12" r="3"/></svg>',
+  edit:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.1 2.1 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>',
+  copy:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>',
+  trash:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/></svg>',
+  money:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="5" width="20" height="14" rx="2"/><circle cx="12" cy="12" r="3"/><path d="M6 12h.01M18 12h.01"/></svg>',
+  trend:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 7 13.5 15.5 8.5 10.5 2 17"/><path d="M16 7h6v6"/></svg>',
+  clock:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg>',
+  repeat:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m17 2 4 4-4 4"/><path d="M3 11v-1a4 4 0 0 1 4-4h14M7 22l-4-4 4-4"/><path d="M21 13v1a4 4 0 0 1-4 4H3"/></svg>',
+  flag:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z"/><path d="M4 22v-7"/></svg>',
+  alert:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><path d="M12 9v4M12 17h.01"/></svg>',
+  check:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 6 9 17l-5-5"/></svg>',
+  download:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3"/></svg>',
+  upload:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M17 8l-5-5-5 5M12 3v12"/></svg>',
+  refresh:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 12a9 9 0 0 1 15-6.7L21 8M21 3v5h-5M21 12a9 9 0 0 1-15 6.7L3 16M3 21v-5h5"/></svg>',
+  inbox:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 12h-6l-2 3h-4l-2-3H2"/><path d="M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"/></svg>',
+  target:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="6"/><circle cx="12" cy="12" r="2"/></svg>',
+};
+
+/* ------------------------------------------------------------------ constants */
+const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+const STATUSES = ['Planned','Open','Interviewing','Offer','Hired','On Hold','Cancelled'];
+const STORE_KEY = 'hrHiringApp.v1';
+const CHART_COLORS = ['#2f6fed','#1e9e6a','#c98a12','#7b5ea7','#178a94','#d1495b','#3a4a72','#e8875a','#5b8def','#9aa4bd'];
+const now = new Date();
+const REF_YEAR = now.getFullYear();
+const REF_MONTH = now.getMonth() + 1; // 1..12
+
+/* ------------------------------------------------------------------ state */
+const state = {
+  meta: {currency:'AED'},
+  columns: [],
+  original: [],       // pristine vacancies from data.json
+  vacancies: [],      // working set (original merged with local changes)
+  dirty: false,
+  route: 'overview',
+  filters: {year:'', month:'', company:'', department:'', status:''},
+  vacFilters: {company:'', department:'', position:'', status:'', month:'', year:'', search:''},
+  vacSort: {key:'id', dir:1},
+  vacPage: 1,
+  vacPerPage: 12,
+  monthlyYear: REF_YEAR,
+  selectedCompany: null,
+  charts: {},
+  searchIdx: -1,
+};
+
+/* ------------------------------------------------------------------ helpers */
+const $ = (s, r=document) => r.querySelector(s);
+const $$ = (s, r=document) => Array.from(r.querySelectorAll(s));
+const el = (tag, cls, html) => { const e=document.createElement(tag); if(cls)e.className=cls; if(html!=null)e.innerHTML=html; return e; };
+function escapeHtml(v){ if(v==null) return ''; return String(v).replace(/[&<>"']/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+function sum(obj){ if(!obj) return 0; return Object.values(obj).reduce((a,b)=> a + (Number(b)||0), 0); }
+function statusClass(s){ return 'st-' + String(s||'Planned').replace(/\s+/g,''); }
+function fmt(n){
+  const v = Math.round(Number(n)||0);
+  return new Intl.NumberFormat('en-AE',{maximumFractionDigits:0}).format(v);
+}
+function aed(n){ return '<span class="cur">AED</span>' + fmt(n); }
+function aedTxt(n){ return 'AED ' + fmt(n); }
+function shortAed(n){
+  n = Number(n)||0;
+  if(Math.abs(n) >= 1e6) return 'AED ' + (n/1e6).toFixed(2).replace(/\.00$/,'') + 'M';
+  if(Math.abs(n) >= 1e3) return 'AED ' + (n/1e3).toFixed(1).replace(/\.0$/,'') + 'K';
+  return 'AED ' + fmt(n);
+}
+function parseDate(iso){ if(!iso) return null; const p=String(iso).slice(0,10).split('-'); if(p.length<2) return null; const y=+p[0], m=+p[1]; if(!y||!m) return null; return {y, m, d:+p[2]||1}; }
+function fmtDate(iso){ const d=parseDate(iso); if(!d) return '—'; return String(d.d).padStart(2,'0')+' '+MONTHS[d.m-1]+' '+d.y; }
+function monthLabel(y,m){ return MONTHS[m-1]+' '+y; }
+
+/* ============================================================================
+   COST CALCULATION ENGINE   (pure functions; no DOM)
+   ========================================================================== */
+function costPrimitives(rec){
+  const q = Number(rec.qty)||1;
+  const c = rec.costs || {};
+  return {
+    oneTime: sum(c.oneTime)*q,
+    monthly: (sum(c.monthlyRecurring)+sum(c.monthly))*q,
+    annual:  sum(c.annual)*q,
+    twoYear: sum(c.twoYear)*q,
+  };
+}
+function isCostEligible(rec){ return rec.status !== 'Cancelled'; }
+function monthsSince(rec, year, month){
+  const d = parseDate(rec.hiringDate); if(!d) return null;
+  return (year - d.y)*12 + (month - d.m);
+}
+/* Total cost for one record in a given calendar month. */
+function calculateMonthlyCost(rec, year, month){
+  if(!isCostEligible(rec)) return 0;
+  const k = monthsSince(rec, year, month);
+  if(k===null || k<0) return 0;
+  const p = costPrimitives(rec);
+  let t = p.monthly;                       // recurring every month
+  if(k===0) t += p.oneTime;                // one-time at hire month
+  if(k%12===0) t += p.annual;              // annual at hire + anniversaries
+  if(k%24===0) t += p.twoYear;             // two-year at hire + every 24 mo
+  return t;
+}
+/* Itemised breakdown for one month (for the audit/detail view). */
+function monthlyCostDetail(rec, year, month){
+  const out = [];
+  if(!isCostEligible(rec)) return out;
+  const k = monthsSince(rec, year, month);
+  if(k===null || k<0) return out;
+  const q = Number(rec.qty)||1;
+  const c = rec.costs || {};
+  const push = (obj, cat) => { for(const [label,amt] of Object.entries(obj||{})){ const v=(Number(amt)||0)*q; if(v>0) out.push({label, amount:v, category:cat}); } };
+  push(c.monthlyRecurring,'Monthly'); push(c.monthly,'Monthly');
+  if(k===0) push(c.oneTime,'One-time');
+  if(k%12===0) push(c.annual,'Annual');
+  if(k%24===0) push(c.twoYear,'Two-year');
+  return out;
+}
+function calculateAnnualCost(rec, year){ let t=0; for(let m=1;m<=12;m++) t+=calculateMonthlyCost(rec,year,m); return t; }
+function calculateTwoYearCost(rec){
+  const d = parseDate(rec.hiringDate); if(!d) return 0;
+  let t=0;
+  for(let k=0;k<24;k++){ const y=d.y+Math.floor((d.m-1+k)/12); const m=((d.m-1+k)%12)+1; t+=calculateMonthlyCost(rec,y,m); }
+  return t;
+}
+function calculateOneTimeCosts(rec){ return isCostEligible(rec)? costPrimitives(rec).oneTime : 0; }
+function calculateRecurringMonthlyCosts(rec){ return isCostEligible(rec)? costPrimitives(rec).monthly : 0; }
+
+/* Forecast: total across records for N months starting at (startY,startM). */
+function forecastRange(records, startY, startM, nMonths){
+  const arr=[];
+  for(let i=0;i<nMonths;i++){
+    const y=startY+Math.floor((startM-1+i)/12); const m=((startM-1+i)%12)+1;
+    let total=0; records.forEach(r=> total+=calculateMonthlyCost(r,y,m));
+    arr.push({year:y, month:m, label:monthLabel(y,m), total});
+  }
+  return arr;
+}
+function generateMonthlyForecast(rec, nMonths){
+  const d=parseDate(rec.hiringDate); if(!d) return [];
+  return forecastRange([rec], d.y, d.m, nMonths);
+}
+
+/* Aggregations over a set of records */
+function aggregate(records){
+  let oneTime=0, monthlyCommit=0, twoYear=0;
+  records.forEach(r=>{ if(!isCostEligible(r)) return; const p=costPrimitives(r); oneTime+=p.oneTime; monthlyCommit+=p.monthly; twoYear+=calculateTwoYearCost(r); });
+  return {oneTime, monthlyCommit, twoYear, count:records.length};
+}
+
+/* ============================================================================
+   STORAGE  (data.json + localStorage merge)
+   ========================================================================== */
+function loadLocal(){ try{ const raw=localStorage.getItem(STORE_KEY); return raw? JSON.parse(raw):null; }catch(e){ return null; } }
+function persist(){
+  try{ localStorage.setItem(STORE_KEY, JSON.stringify({vacancies:state.vacancies, savedAt:new Date().toISOString()})); }
+  catch(e){ toast('Could not save locally: '+e.message,'bad'); }
+  state.dirty = true; renderDirty();
+}
+function renderDirty(){
+  const foot = $('#sideFoot');
+  if(state.dirty){
+    foot.innerHTML = '<span class="dirty-dot"></span>Unsaved local changes.<br>Export from <b>Data &amp; Settings</b> to keep them.';
+  }else{
+    foot.innerHTML = state.vacancies.length + ' vacancies loaded.<br>Data &amp; Settings to export or reset.';
+  }
+}
+
+/* ============================================================================
+   BOOT
+   ========================================================================== */
+async function boot(){
+  buildNav();
+  $('#searchIcon').innerHTML = I.search;
+  $('#hamburger').innerHTML = I.menu;
+  $('#drawerClose').innerHTML = I.x;
+  wireGlobalEvents();
+  try{
+    const res = await fetch(window.APP_DATA_URL, {cache:'no-store'});
+    if(!res.ok) throw new Error('HTTP '+res.status);
+    const data = await res.json();
+    ingest(data);
+  }catch(err){
+    showLoadError(err); return;
+  }
+  $('#loader').style.display='none';
+  $('#app').style.display='flex';
+  navigate('overview');
+}
+function ingest(data){
+  state.meta = data.metadata || {currency:'AED'};
+  state.columns = data.columns || [];
+  state.original = (data.vacancies||[]).map(normalize);
+  const local = loadLocal();
+  if(local && Array.isArray(local.vacancies) && local.vacancies.length){
+    state.vacancies = local.vacancies.map(normalize);
+    state.dirty = true;
+  }else{
+    state.vacancies = state.original.map(v=>JSON.parse(JSON.stringify(v)));
+    state.dirty = false;
+  }
+  renderDirty();
+}
+function normalize(v){
+  v = Object.assign({}, v);
+  v.qty = Number(v.qty)||1;
+  v.status = v.status || 'Planned';
+  v.costs = v.costs || {oneTime:{},monthlyRecurring:{},twoYear:{},annual:{},monthly:{}};
+  ['oneTime','monthlyRecurring','twoYear','annual','monthly'].forEach(k=>{ v.costs[k]=v.costs[k]||{}; });
+  return v;
+}
+function showLoadError(err){
+  $('#loaderText').parentElement.innerHTML =
+    '<div class="load-error"><h3>Could not load data.json</h3>'+
+    '<p>The application loads its dataset from <code>data.json</code> in the same folder. '+
+    'Browsers block that request when the page is opened directly from disk '+
+    '(<code>file://</code>). Run a small local server instead:</p>'+
+    '<pre>cd your-project-folder\npython -m http.server 8000</pre>'+
+    '<p style="margin-top:10px">then open <code>http://localhost:8000</code>. '+
+    'On GitHub Pages this works automatically.</p>'+
+    '<p style="margin-top:10px;color:var(--text-3)">Technical detail: '+escapeHtml(err.message)+'</p></div>';
+}
+
+/* ------------------------------------------------------------------ nav */
+const NAV = [
+  {group:'Analyze', items:[['overview','Overview',I.grid],['monthly','Monthly Cost',I.calendar],['cost','Cost Analysis',I.chart]]},
+  {group:'Manage', items:[['vacancies','Vacancies',I.briefcase,true],['employees','Employees / Hires',I.users]]},
+  {group:'Structure', items:[['companies','Companies',I.building],['departments','Departments',I.layers]]},
+  {group:'System', items:[['settings','Data & Settings',I.settings]]},
+];
+const TITLES = {overview:'Overview',monthly:'Monthly Cost',cost:'Cost Analysis',vacancies:'Vacancies',employees:'Employees / Hires',companies:'Companies',departments:'Departments',settings:'Data & Settings'};
+function buildNav(){
+  const nav=$('#nav'); nav.innerHTML='';
+  NAV.forEach(g=>{
+    nav.appendChild(el('div','nav-label',g.group));
+    g.items.forEach(([page,label,icon,badge])=>{
+      const a=el('a',null, icon+'<span>'+label+'</span>'+(badge?'<span class="badge" id="navVacCount">0</span>':''));
+      a.dataset.page=page;
+      a.addEventListener('click',()=>{ navigate(page); $('#sidebar').classList.remove('open'); });
+      nav.appendChild(a);
+    });
+  });
+}
+function navigate(page){
+  state.route=page;
+  $$('#nav a').forEach(a=>a.classList.toggle('active',a.dataset.page===page));
+  $('#pageTitle').textContent=TITLES[page]||page;
+  render();
+}
+function render(){
+  const c=$('#pages');
+  Object.values(state.charts).forEach(ch=>{ try{ch.destroy();}catch(e){} });
+  state.charts={};
+  const vc=$('#navVacCount'); if(vc) vc.textContent=state.vacancies.filter(v=>v.status!=='Cancelled'&&v.status!=='Hired').length;
+  switch(state.route){
+    case 'overview': renderOverview(c); break;
+    case 'monthly': renderMonthly(c); break;
+    case 'cost': renderCost(c); break;
+    case 'vacancies': renderVacancies(c); break;
+    case 'employees': renderEmployees(c); break;
+    case 'companies': renderCompanies(c); break;
+    case 'departments': renderDepartments(c); break;
+    case 'settings': renderSettings(c); break;
+  }
+}
+
+/* ------------------------------------------------------------------ filters */
+function uniq(key){ return Array.from(new Set(state.vacancies.map(v=>v[key]).filter(Boolean))).sort(); }
+function filteredForOverview(){
+  const f=state.filters;
+  return state.vacancies.filter(v=>{
+    if(f.company && v.company!==f.company) return false;
+    if(f.department && v.department!==f.department) return false;
+    if(f.status && v.status!==f.status) return false;
+    const d=parseDate(v.hiringDate);
+    if(f.year && (!d || d.y!==+f.year)) return false;
+    if(f.month && (!d || d.m!==+f.month)) return false;
+    return true;
+  });
+}
+function years(){
+  const ys=new Set();
+  state.vacancies.forEach(v=>{ const d=parseDate(v.hiringDate); if(d) ys.add(d.y); });
+  ys.add(REF_YEAR);
+  return Array.from(ys).sort();
+}
+
+/* ============================================================================
+   OVERVIEW
+   ========================================================================== */
+function renderOverview(c){
+  c.innerHTML='';
+  // Filter bar
+  const fb = el('div','filterbar');
+  fb.appendChild(selectFilt('Year','year',['',...years()], v=>v===''?'All years':v));
+  fb.appendChild(selectFilt('Month','month',['',...MONTHS.map((_,i)=>i+1)], v=>v===''?'All months':MONTHS[v-1]));
+  fb.appendChild(selectFilt('Company','company',['',...uniq('company')]));
+  fb.appendChild(selectFilt('Department','department',['',...uniq('department')]));
+  fb.appendChild(selectFilt('Status','status',['',...STATUSES]));
+  const reset=el('button','btn ghost',I.refresh+'Reset filters');
+  reset.style.marginLeft='auto';
+  reset.onclick=()=>{ state.filters={year:'',month:'',company:'',department:'',status:''}; render(); };
+  fb.appendChild(reset);
+  c.appendChild(fb);
+
+  const recs = filteredForOverview();
+  const eligible = recs.filter(isCostEligible);
+  const agg = aggregate(recs);
+
+  // KPI values
+  const activeVac = recs.filter(v=>v.status!=='Hired'&&v.status!=='Cancelled').length;
+  const plannedHires = recs.filter(v=>v.status!=='Cancelled').length;
+  const hired = recs.filter(v=>v.status==='Hired').length;
+  const curMonthCost = eligible.reduce((s,r)=>s+calculateMonthlyCost(r,REF_YEAR,REF_MONTH),0);
+  const nm = REF_MONTH===12?{y:REF_YEAR+1,m:1}:{y:REF_YEAR,m:REF_MONTH+1};
+  const nextMonthCost = eligible.reduce((s,r)=>s+calculateMonthlyCost(r,nm.y,nm.m),0);
+  const curYearForecast = eligible.reduce((s,r)=>s+calculateAnnualCost(r,REF_YEAR),0);
+  const avgPerHire = agg.count? Math.round(agg.twoYear/eligible.length):0;
+  const totalHiringCost = agg.oneTime; // total one-time hiring spend
+  const totalCommit = agg.monthlyCommit;
+
+  const kpis = el('div','kpi-grid');
+  kpis.appendChild(kpiCard('Active Vacancies', activeVac, null, 'ic-blue', I.briefcase, plannedHires+' planned hires'));
+  kpis.appendChild(kpiCard('Hired Employees', hired, null, 'ic-green', I.check, hired+' filled positions'));
+  kpis.appendChild(kpiCard('Total 2-Year Cost', shortAed(agg.twoYear), true,'ic-navy', I.money, 'full committed spend'));
+  kpis.appendChild(kpiCard('Avg Cost / Hire', shortAed(avgPerHire), true,'ic-purple', I.target, 'over 24 months'));
+  kpis.appendChild(kpiCard('This Month', shortAed(curMonthCost), true,'ic-teal', I.calendar, monthLabel(REF_YEAR,REF_MONTH)));
+  kpis.appendChild(kpiCard('Next Month', shortAed(nextMonthCost), true,'ic-amber', I.trend, monthLabel(nm.y,nm.m)+' forecast'));
+  kpis.appendChild(kpiCard('This Year', shortAed(curYearForecast), true,'ic-blue', I.chart, REF_YEAR+' total'));
+  kpis.appendChild(kpiCard('Monthly Commitment', shortAed(totalCommit), true,'ic-green', I.repeat, 'recurring / month'));
+  kpis.appendChild(kpiCard('One-Time Hiring', shortAed(totalHiringCost), true,'ic-red', I.flag, 'visa, airfare, agency'));
+  c.appendChild(kpis);
+
+  // Insights
+  c.appendChild(el('div','section-title', I.alert+' Management insights'));
+  c.appendChild(buildInsights(eligible));
+
+  // Charts row 1
+  const row1=el('div','grid two-col'); row1.style.marginTop='16px';
+  row1.appendChild(chartCard('Monthly Employment Cost', 'ovMonthly', 'by month — change year in the filter above',
+    yearSelector(v=>{ state.filters.year=v; render(); })));
+  row1.appendChild(chartCard('Cost by Company','ovCompany','total 2-year cost per company'));
+  c.appendChild(row1);
+
+  const row2=el('div','grid two-col'); row2.style.marginTop='16px';
+  row2.appendChild(chartCard('Cost by Department','ovDept','total 2-year cost per department'));
+  row2.appendChild(chartCard('Vacancy Status','ovStatus','pipeline distribution'));
+  c.appendChild(row2);
+
+  const row3=el('div','grid'); row3.style.marginTop='16px';
+  row3.appendChild(chartCard('Cost Breakdown by Category','ovBreakdown','where the 2-year spend goes'));
+  c.appendChild(row3);
+
+  // Upcoming hires
+  c.appendChild(el('div','section-title', I.clock+' Upcoming hires'));
+  c.appendChild(upcomingHires(eligible));
+
+  // draw charts after DOM present
+  requestAnimationFrame(()=>drawOverviewCharts(recs, eligible));
+}
+
+function buildInsights(recs){
+  const wrap=el('div','insights');
+  const byCompany={}, byDept={};
+  recs.forEach(r=>{ const t=calculateTwoYearCost(r); byCompany[r.company]=(byCompany[r.company]||0)+t; byDept[r.department]=(byDept[r.department]||0)+t; });
+  const topCo=Object.entries(byCompany).sort((a,b)=>b[1]-a[1])[0];
+  const topDe=Object.entries(byDept).sort((a,b)=>b[1]-a[1])[0];
+  // month with highest forecasted cost over next 24
+  const fc=forecastRange(recs,REF_YEAR,REF_MONTH,24).sort((a,b)=>b.total-a.total)[0];
+  // hires in next 90 days
+  const horizon=new Date(now.getTime()); horizon.setDate(horizon.getDate()+90);
+  const next90=recs.filter(r=>{ const d=parseDate(r.hiringDate); if(!d) return false; const dt=new Date(d.y,d.m-1,d.d); return dt>=now && dt<=horizon; }).length;
+  // largest one-time
+  const bigOne=recs.map(r=>({r,v:costPrimitives(r).oneTime})).sort((a,b)=>b.v-a.v)[0];
+  const totalMonthly=recs.reduce((s,r)=>s+costPrimitives(r).monthly,0);
+  const items=[
+    ['ic-navy',I.building,'Highest-cost company', topCo? topCo[0]+' · '+shortAed(topCo[1]):'—'],
+    ['ic-purple',I.layers,'Highest-cost department', topDe? topDe[0]+' · '+shortAed(topDe[1]):'—'],
+    ['ic-amber',I.trend,'Peak forecast month', fc? fc.label+' · '+shortAed(fc.total):'—'],
+    ['ic-blue',I.clock,'Hires in next 90 days', next90+' position'+(next90===1?'':'s')],
+    ['ic-red',I.flag,'Largest one-time expense', bigOne&&bigOne.v? bigOne.r.position+' · '+shortAed(bigOne.v):'—'],
+    ['ic-green',I.repeat,'Total monthly commitment', shortAed(totalMonthly)+' /mo once all join'],
+  ];
+  items.forEach(([cls,ic,t,v])=>{
+    wrap.appendChild(el('div','insight','<div class="i-ic '+cls+'">'+ic+'</div><div><div class="i-t">'+t+'</div><div class="i-v">'+escapeHtml(v)+'</div></div>'));
+  });
+  return wrap;
+}
+
+function upcomingHires(recs){
+  const rows=recs.map(r=>({r,d:parseDate(r.hiringDate)})).filter(x=>x.d)
+    .sort((a,b)=> new Date(a.d.y,a.d.m-1,a.d.d) - new Date(b.d.y,b.d.m-1,b.d.d)).slice(0,10);
+  if(!rows.length) return emptyState(I.clock,'No upcoming hires','No vacancies with a valid hiring date match the current filters.');
+  const card=el('div','card');
+  let html='<div class="table-scroll"><table class="tbl"><thead><tr><th>Position</th><th>Company</th><th>Department</th><th>Hiring date</th><th class="r">First-month cost</th></tr></thead><tbody>';
+  rows.forEach(({r,d})=>{
+    const first=calculateMonthlyCost(r,d.y,d.m);
+    html+='<tr class="clickable" data-id="'+r.id+'"><td class="pos-name">'+escapeHtml(r.position)+'</td><td>'+escapeHtml(r.company)+'</td><td>'+escapeHtml(r.department)+'</td><td class="mono">'+fmtDate(r.hiringDate)+'</td><td class="r mono">'+aedTxt(first)+'</td></tr>';
+  });
+  html+='</tbody></table></div>';
+  card.innerHTML=html;
+  card.querySelectorAll('tr.clickable').forEach(tr=>tr.onclick=()=>openDetail(tr.dataset.id));
+  return card;
+}
+
+function drawOverviewCharts(recs, eligible){
+  const yr=+state.filters.year || state.monthlyYear || REF_YEAR;
+  // Monthly cost for the chosen year
+  const monthly = MONTHS.map((_,i)=> eligible.reduce((s,r)=>s+calculateMonthlyCost(r,yr,i+1),0));
+  makeChart('ovMonthly','bar',{labels:MONTHS,datasets:[{label:aedTxt(0).replace(/[\d,]/g,'')+' cost',data:monthly,backgroundColor:'#2f6fed',borderRadius:5,maxBarThickness:38}]},barMoneyOpts('Cost — '+yr));
+  // Company
+  const byCo={}; eligible.forEach(r=>byCo[r.company]=(byCo[r.company]||0)+calculateTwoYearCost(r));
+  const coE=Object.entries(byCo).sort((a,b)=>b[1]-a[1]);
+  makeChart('ovCompany','bar',{labels:coE.map(x=>x[0]),datasets:[{data:coE.map(x=>x[1]),backgroundColor:coE.map((_,i)=>CHART_COLORS[i%CHART_COLORS.length]),borderRadius:5,maxBarThickness:34}]},Object.assign(barMoneyOpts(),{indexAxis:'y'}));
+  // Department
+  const byDe={}; eligible.forEach(r=>byDe[r.department]=(byDe[r.department]||0)+calculateTwoYearCost(r));
+  const deE=Object.entries(byDe).sort((a,b)=>b[1]-a[1]);
+  makeChart('ovDept','doughnut',{labels:deE.map(x=>x[0]),datasets:[{data:deE.map(x=>x[1]),backgroundColor:CHART_COLORS,borderWidth:2,borderColor:'#fff'}]},donutMoneyOpts());
+  // Status
+  const byStatus={}; STATUSES.forEach(s=>byStatus[s]=0); recs.forEach(r=>byStatus[r.status]=(byStatus[r.status]||0)+1);
+  const stE=Object.entries(byStatus).filter(x=>x[1]>0);
+  makeChart('ovStatus','doughnut',{labels:stE.map(x=>x[0]),datasets:[{data:stE.map(x=>x[1]),backgroundColor:stE.map(x=>statusColor(x[0])),borderWidth:2,borderColor:'#fff'}]},donutCountOpts());
+  // Breakdown by category
+  let oneTime=0,monthly24=0,annual2=0,two=0;
+  eligible.forEach(r=>{ const p=costPrimitives(r); oneTime+=p.oneTime; monthly24+=p.monthly*24; annual2+=p.annual*2; two+=p.twoYear; });
+  makeChart('ovBreakdown','bar',{labels:['Recurring monthly ×24','One-time hiring','Annual ×2','Two-year renewals'],
+    datasets:[{data:[monthly24,oneTime,annual2,two],backgroundColor:['#2f6fed','#d1495b','#c98a12','#178a94'],borderRadius:5,maxBarThickness:60}]},barMoneyOpts('Full 24-month cost by category'));
+}
+function statusColor(s){ return {Planned:'#8b93a6',Open:'#2f6fed',Interviewing:'#7b5ea7',Offer:'#c98a12',Hired:'#1e9e6a','On Hold':'#b9c0d1',Cancelled:'#d1495b'}[s]||'#8b93a6'; }
+
+/* ============================================================================
+   MONTHLY COST (matrix + forecast)
+   ========================================================================== */
+function renderMonthly(c){
+  c.innerHTML='';
+  const yr = state.monthlyYear;
+  // controls
+  const fb=el('div','filterbar');
+  const ysel=selectFiltRaw('Year', String(yr), years().map(String), v=>{ state.monthlyYear=+v; render(); });
+  fb.appendChild(ysel);
+  fb.appendChild(selectFilt('Company','company',['',...uniq('company')]));
+  fb.appendChild(selectFilt('Department','department',['',...uniq('department')]));
+  const reset=el('button','btn ghost',I.refresh+'Reset');
+  reset.style.marginLeft='auto';
+  reset.onclick=()=>{ state.filters.company=''; state.filters.department=''; render(); };
+  fb.appendChild(reset);
+  c.appendChild(fb);
+
+  // Forecast strip
+  c.appendChild(el('div','section-title', I.trend+' Forecast horizons (all cost-eligible vacancies)'));
+  const eligibleAll = state.vacancies.filter(isCostEligible);
+  const fRow = el('div','kpi-grid');
+  const mkF=(label,months)=>{ const arr=forecastRange(eligibleAll,REF_YEAR,REF_MONTH,months); const total=arr.reduce((s,x)=>s+x.total,0); return kpiCard(label,shortAed(total),true,'ic-blue',I.calendar, months+' months from '+monthLabel(REF_YEAR,REF_MONTH)); };
+  const curTotal=eligibleAll.reduce((s,r)=>s+calculateMonthlyCost(r,REF_YEAR,REF_MONTH),0);
+  fRow.appendChild(kpiCard('Current month',shortAed(curTotal),true,'ic-teal',I.calendar,monthLabel(REF_YEAR,REF_MONTH)));
+  fRow.appendChild(mkF('Next 3 months',3));
+  fRow.appendChild(mkF('Next 6 months',6));
+  fRow.appendChild(mkF('Next 12 months',12));
+  fRow.appendChild(mkF('Next 24 months',24));
+  c.appendChild(fRow);
+
+  // Matrix
+  const recs = state.vacancies.filter(v=>{
+    if(state.filters.company && v.company!==state.filters.company) return false;
+    if(state.filters.department && v.department!==state.filters.department) return false;
+    return true;
+  });
+  const card=el('div','card');
+  card.appendChild(cardHeader('Monthly Cost Matrix — '+yr,'each cell is auto-calculated by cost frequency; click a row to audit'));
+  if(!recs.length){ card.appendChild(emptyState(I.calendar,'No vacancies','No records match the current filters.')); c.appendChild(card); return; }
+
+  let html='<div class="table-scroll"><table class="tbl matrix"><thead><tr><th>Vacancy</th><th>Company</th><th>Dept</th><th>Hire date</th>';
+  MONTHS.forEach(m=>html+='<th class="r">'+m+'</th>'); html+='<th class="r">Annual total</th></tr></thead><tbody>';
+  const colTotals=new Array(12).fill(0); let grand=0;
+  recs.forEach(r=>{
+    let rowTotal=0; let cells='';
+    for(let m=1;m<=12;m++){ const v=calculateMonthlyCost(r,yr,m); rowTotal+=v; colTotals[m-1]+=v; cells+='<td class="r '+(v===0?'zero':'')+'">'+(v===0?'—':fmt(v))+'</td>'; }
+    grand+=rowTotal;
+    html+='<tr class="clickable" data-id="'+r.id+'"><td class="pos-name">'+escapeHtml(r.position)+' <span class="muted mono" style="font-size:11px">'+r.id+'</span></td><td>'+escapeHtml(r.company)+'</td><td>'+escapeHtml(r.department)+'</td><td class="mono">'+fmtDate(r.hiringDate)+'</td>'+cells+'<td class="r mono"><b>'+fmt(rowTotal)+'</b></td></tr>';
+  });
+  html+='</tbody><tfoot><tr class="tbl-total"><td colspan="4">Total — '+recs.length+' vacancies</td>';
+  colTotals.forEach(v=>html+='<td class="r">'+(v===0?'—':fmt(v))+'</td>'); html+='<td class="r">'+fmt(grand)+'</td></tr></tfoot></table></div>';
+  const body=el('div'); body.innerHTML=html; card.appendChild(body);
+  card.querySelectorAll('tr.clickable').forEach(tr=>tr.onclick=()=>openDetail(tr.dataset.id));
+  c.appendChild(card);
+
+  // year trend chart
+  const trendRow=el('div','grid'); trendRow.style.marginTop='16px';
+  trendRow.appendChild(chartCard('Total monthly cost — '+yr,'monthlyTrend','sum across the vacancies shown above'));
+  c.appendChild(trendRow);
+  requestAnimationFrame(()=>{
+    const data=MONTHS.map((_,i)=>colTotals[i]);
+    makeChart('monthlyTrend','line',{labels:MONTHS,datasets:[{data,borderColor:'#2f6fed',backgroundColor:'rgba(47,111,237,.10)',fill:true,tension:.35,pointRadius:3,pointBackgroundColor:'#2f6fed'}]},barMoneyOpts());
+  });
+}
+
+/* ============================================================================
+   COST ANALYSIS
+   ========================================================================== */
+function renderCost(c){
+  c.innerHTML='';
+  const eligible=state.vacancies.filter(isCostEligible);
+  let oneTime=0,monthlyRec=0,two=0,annual=0;
+  const catTotals={}; // per source header, over 24 months
+  eligible.forEach(r=>{
+    const p=costPrimitives(r); const q=Number(r.qty)||1;
+    oneTime+=p.oneTime; monthlyRec+=p.monthly; two+=p.twoYear; annual+=p.annual;
+    const add=(obj,mult)=>{ for(const[k,v] of Object.entries(obj||{})){ catTotals[k]=(catTotals[k]||0)+(Number(v)||0)*q*mult; } };
+    add(r.costs.oneTime,1); add(r.costs.monthlyRecurring,24); add(r.costs.monthly,24); add(r.costs.annual,2); add(r.costs.twoYear,1);
+  });
+  const kpi=el('div','kpi-grid');
+  kpi.appendChild(kpiCard('One-time hiring (M–O)',shortAed(oneTime),true,'ic-red',I.flag,'visa · airfare · agency'));
+  kpi.appendChild(kpiCard('Monthly recurring (P–R, Y)',shortAed(monthlyRec),true,'ic-blue',I.repeat,'per month, all hires'));
+  kpi.appendChild(kpiCard('Annual costs (T–X)',shortAed(annual),true,'ic-amber',I.calendar,'per year, all hires'));
+  kpi.appendChild(kpiCard('Two-year costs (S, Z)',shortAed(two),true,'ic-teal',I.clock,'per 24-month cycle'));
+  c.appendChild(kpi);
+
+  const fixedTotal=oneTime; const recurring24=monthlyRec*24+annual*2+two;
+  const row=el('div','grid two-col'); row.style.marginTop='4px';
+  row.appendChild(chartCard('Fixed / one-time vs recurring','fixedVsRec','share of the full 24-month cost'));
+  row.appendChild(chartCard('24-month cost by line item','catBreak','every cost heading from the sheet'));
+  c.appendChild(row);
+
+  const row2=el('div','grid two-col'); row2.style.marginTop='16px';
+  row2.appendChild(chartCard('One-time cost by company','otByCo',''));
+  row2.appendChild(chartCard('Recurring monthly by company','recByCo',''));
+  c.appendChild(row2);
+
+  requestAnimationFrame(()=>{
+    makeChart('fixedVsRec','doughnut',{labels:['One-time (fixed)','Recurring over 24 mo'],datasets:[{data:[fixedTotal,recurring24],backgroundColor:['#d1495b','#2f6fed'],borderWidth:2,borderColor:'#fff'}]},donutMoneyOpts());
+    const cats=Object.entries(catTotals).sort((a,b)=>b[1]-a[1]);
+    makeChart('catBreak','bar',{labels:cats.map(x=>x[0].replace(/\s*\(.*?\)/,'')),datasets:[{data:cats.map(x=>x[1]),backgroundColor:'#3a4a72',borderRadius:4,maxBarThickness:26}]},Object.assign(barMoneyOpts(),{indexAxis:'y'}));
+    const otc={},rec={}; eligible.forEach(r=>{ otc[r.company]=(otc[r.company]||0)+costPrimitives(r).oneTime; rec[r.company]=(rec[r.company]||0)+costPrimitives(r).monthly; });
+    const oe=Object.entries(otc).sort((a,b)=>b[1]-a[1]); const re=Object.entries(rec).sort((a,b)=>b[1]-a[1]);
+    makeChart('otByCo','bar',{labels:oe.map(x=>x[0]),datasets:[{data:oe.map(x=>x[1]),backgroundColor:'#d1495b',borderRadius:4,maxBarThickness:30}]},barMoneyOpts());
+    makeChart('recByCo','bar',{labels:re.map(x=>x[0]),datasets:[{data:re.map(x=>x[1]),backgroundColor:'#2f6fed',borderRadius:4,maxBarThickness:30}]},barMoneyOpts());
+  });
+}
+
+/* ============================================================================
+   VACANCIES (table + CRUD)
+   ========================================================================== */
+function renderVacancies(c){
+  c.innerHTML='';
+  const f=state.vacFilters;
+  const fb=el('div','filterbar');
+  fb.appendChild(vacSelect('Company','company',['',...uniq('company')]));
+  fb.appendChild(vacSelect('Department','department',['',...uniq('department')]));
+  fb.appendChild(vacSelect('Position','position',['',...uniq('position')]));
+  fb.appendChild(vacSelect('Status','status',['',...STATUSES]));
+  fb.appendChild(vacSelect('Year','year',['',...years().map(String)]));
+  fb.appendChild(vacSelect('Month','month',['',...MONTHS.map((_,i)=>String(i+1))], v=>v===''?'All':MONTHS[v-1]));
+  const add=el('button','btn primary',I.plus+'Add vacancy');
+  add.style.marginLeft='auto'; add.onclick=()=>openForm(null);
+  fb.appendChild(add);
+  c.appendChild(fb);
+
+  let recs=state.vacancies.filter(v=>{
+    if(f.company&&v.company!==f.company) return false;
+    if(f.department&&v.department!==f.department) return false;
+    if(f.position&&v.position!==f.position) return false;
+    if(f.status&&v.status!==f.status) return false;
+    const d=parseDate(v.hiringDate);
+    if(f.year&&(!d||d.y!==+f.year)) return false;
+    if(f.month&&(!d||d.m!==+f.month)) return false;
+    return true;
+  });
+  // sort
+  const {key,dir}=state.vacSort;
+  recs.sort((a,b)=>{
+    let av,bv;
+    if(key==='twoYear'){av=calculateTwoYearCost(a);bv=calculateTwoYearCost(b);}
+    else if(key==='monthly'){av=calculateRecurringMonthlyCosts(a);bv=calculateRecurringMonthlyCosts(b);}
+    else if(key==='hiringDate'){av=a.hiringDate||'';bv=b.hiringDate||'';}
+    else {av=String(a[key]||'').toLowerCase();bv=String(b[key]||'').toLowerCase();}
+    if(av<bv)return -1*dir; if(av>bv)return 1*dir; return 0;
+  });
+
+  const card=el('div','card');
+  card.appendChild(cardHeader('Vacancies','showing '+recs.length+' of '+state.vacancies.length));
+  if(!recs.length){ card.appendChild(emptyState(I.briefcase,'No vacancies match','Adjust the filters, or add a new vacancy.')); c.appendChild(card); return; }
+
+  // pagination slice
+  const per=state.vacPerPage; const pages=Math.ceil(recs.length/per);
+  if(state.vacPage>pages) state.vacPage=1;
+  const start=(state.vacPage-1)*per; const slice=recs.slice(start,start+per);
+
+  const cols=[['id','ID'],['position','Position'],['company','Company'],['department','Dept'],['status','Status'],['hiringDate','Hire date'],['monthly','Monthly'],['twoYear','2-yr cost']];
+  let html='<div class="table-scroll"><table class="tbl"><thead><tr>';
+  cols.forEach(([k,label])=>{ const sorted=state.vacSort.key===k; const rcls=(k==='monthly'||k==='twoYear')?' r':''; html+='<th class="sortable'+rcls+(sorted?' sorted':'')+'" data-k="'+k+'">'+label+'<span class="arr">'+(sorted?(dir>0?'▲':'▼'):'↕')+'</span></th>'; });
+  html+='<th class="r">Actions</th></tr></thead><tbody>';
+  slice.forEach(r=>{
+    html+='<tr><td class="mono" style="color:var(--accent);font-weight:600">'+r.id+'</td>'+
+      '<td class="pos-name clickable" data-open="'+r.id+'">'+escapeHtml(r.position)+'</td>'+
+      '<td>'+escapeHtml(r.company)+'</td><td>'+escapeHtml(r.department)+'</td>'+
+      '<td><span class="badge-status '+statusClass(r.status)+'">'+escapeHtml(r.status)+'</span></td>'+
+      '<td class="mono">'+fmtDate(r.hiringDate)+'</td>'+
+      '<td class="r mono">'+fmt(calculateRecurringMonthlyCosts(r))+'</td>'+
+      '<td class="r mono"><b>'+fmt(calculateTwoYearCost(r))+'</b></td>'+
+      '<td class="r">'+actionsMenu(r.id)+'</td></tr>';
+  });
+  html+='</tbody></table></div>';
+  const body=el('div'); body.innerHTML=html; card.appendChild(body);
+
+  // pager
+  const pager=el('div','pager');
+  pager.innerHTML='<span class="info">Page '+state.vacPage+' of '+pages+' · '+recs.length+' vacancies</span>';
+  const prev=el('button',null,'‹'); prev.disabled=state.vacPage<=1; prev.onclick=()=>{state.vacPage--;render();};
+  pager.appendChild(prev);
+  const maxBtns=7; let s=Math.max(1,state.vacPage-3), e=Math.min(pages,s+maxBtns-1); s=Math.max(1,e-maxBtns+1);
+  for(let p=s;p<=e;p++){ const b=el('button',(p===state.vacPage?'on':''),String(p)); b.onclick=()=>{state.vacPage=p;render();}; pager.appendChild(b); }
+  const next=el('button',null,'›'); next.disabled=state.vacPage>=pages; next.onclick=()=>{state.vacPage++;render();};
+  pager.appendChild(next);
+  card.appendChild(pager);
+  c.appendChild(card);
+
+  // wire
+  card.querySelectorAll('th.sortable').forEach(th=>th.onclick=()=>{ const k=th.dataset.k; if(state.vacSort.key===k)state.vacSort.dir*=-1; else state.vacSort={key:k,dir:1}; render(); });
+  card.querySelectorAll('[data-open]').forEach(td=>{ td.style.cursor='pointer'; td.onclick=()=>openDetail(td.dataset.open); });
+  wireActionMenus(card);
+}
+
+function actionsMenu(id){
+  return '<div class="act-wrap"><button class="act-btn" data-menu="'+id+'">'+I.dots+'</button>'+
+    '<div class="act-menu" id="menu-'+id+'">'+
+    '<button data-act="view" data-id="'+id+'">'+I.eye+'View</button>'+
+    '<button data-act="edit" data-id="'+id+'">'+I.edit+'Edit</button>'+
+    '<button data-act="dup" data-id="'+id+'">'+I.copy+'Duplicate</button>'+
+    '<div class="sep"></div>'+
+    '<button class="del" data-act="del" data-id="'+id+'">'+I.trash+'Delete</button>'+
+    '</div></div>';
+}
+function wireActionMenus(root){
+  root.querySelectorAll('[data-menu]').forEach(btn=>{
+    btn.onclick=(e)=>{ e.stopPropagation(); const id=btn.dataset.menu; const m=$('#menu-'+id);
+      const isOpen=m.classList.contains('open'); closeAllMenus(); if(!isOpen)m.classList.add('open'); };
+  });
+  root.querySelectorAll('[data-act]').forEach(b=>{
+    b.onclick=(e)=>{ e.stopPropagation(); closeAllMenus(); const id=b.dataset.id;
+      if(b.dataset.act==='view')openDetail(id);
+      else if(b.dataset.act==='edit')openForm(id);
+      else if(b.dataset.act==='dup')duplicateVacancy(id);
+      else if(b.dataset.act==='del')confirmDelete(id);
+    };
+  });
+}
+function closeAllMenus(){ $$('.act-menu.open').forEach(m=>m.classList.remove('open')); }
+
+/* ============================================================================
+   EMPLOYEES / HIRES
+   ========================================================================== */
+function renderEmployees(c){
+  c.innerHTML='';
+  const f=state.vacFilters;
+  const fb=el('div','filterbar');
+  fb.appendChild(vacSelect('Company','company',['',...uniq('company')]));
+  fb.appendChild(vacSelect('Department','department',['',...uniq('department')]));
+  fb.appendChild(vacSelect('Position','position',['',...uniq('position')]));
+  fb.appendChild(vacSelect('Status','status',['',...STATUSES]));
+  c.appendChild(fb);
+
+  let recs=state.vacancies.filter(v=>{
+    if(f.company&&v.company!==f.company) return false;
+    if(f.department&&v.department!==f.department) return false;
+    if(f.position&&v.position!==f.position) return false;
+    if(f.status&&v.status!==f.status) return false;
+    return true;
+  });
+  const card=el('div','card');
+  card.appendChild(cardHeader('Employees / Hires','one-time, monthly, annual and 2-year cost per position'));
+  if(!recs.length){ card.appendChild(emptyState(I.users,'Nothing to show','No records match the current filters.')); c.appendChild(card); return; }
+  let html='<div class="table-scroll"><table class="tbl"><thead><tr><th>Employee / Vacancy</th><th>Company</th><th>Dept</th><th>Position</th><th>Hire date</th><th>Status</th><th class="r">One-time</th><th class="r">Monthly</th><th class="r">Annual</th><th class="r">2-year</th></tr></thead><tbody>';
+  let t={ot:0,mo:0,an:0,ty:0};
+  recs.forEach(r=>{
+    const ot=calculateOneTimeCosts(r), mo=calculateRecurringMonthlyCosts(r), an=(costPrimitives(r).annual), ty=calculateTwoYearCost(r);
+    t.ot+=ot;t.mo+=mo;t.an+=an;t.ty+=ty;
+    const name = r.employeeName? escapeHtml(r.employeeName) : '<span class="muted">— vacant —</span>';
+    html+='<tr class="clickable" data-id="'+r.id+'"><td>'+name+' <span class="muted mono" style="font-size:11px">'+r.id+'</span></td><td>'+escapeHtml(r.company)+'</td><td>'+escapeHtml(r.department)+'</td><td>'+escapeHtml(r.position)+'</td><td class="mono">'+fmtDate(r.hiringDate)+'</td><td><span class="badge-status '+statusClass(r.status)+'">'+escapeHtml(r.status)+'</span></td><td class="r mono">'+fmt(ot)+'</td><td class="r mono">'+fmt(mo)+'</td><td class="r mono">'+fmt(an)+'</td><td class="r mono"><b>'+fmt(ty)+'</b></td></tr>';
+  });
+  html+='</tbody><tfoot><tr class="tbl-total"><td colspan="6">Total — '+recs.length+' records</td><td class="r">'+fmt(t.ot)+'</td><td class="r">'+fmt(t.mo)+'</td><td class="r">'+fmt(t.an)+'</td><td class="r">'+fmt(t.ty)+'</td></tr></tfoot></table></div>';
+  const body=el('div');body.innerHTML=html;card.appendChild(body);
+  card.querySelectorAll('tr.clickable').forEach(tr=>tr.onclick=()=>openDetail(tr.dataset.id));
+  c.appendChild(card);
+}
+
+/* ============================================================================
+   COMPANIES
+   ========================================================================== */
+function renderCompanies(c){
+  c.innerHTML='';
+  const companies=uniq('company');
+  // comparison table
+  c.appendChild(el('div','section-title',I.building+' All companies comparison'));
+  const compCard=el('div','card');
+  let html='<div class="table-scroll"><table class="tbl"><thead><tr><th class="sortable" data-sc="name">Company</th><th class="r">Vacancies</th><th class="r">Hired</th><th class="r">Monthly cost</th><th class="r">Annual cost</th><th class="r">2-year cost</th><th class="r">Avg / hire</th></tr></thead><tbody>';
+  const rows=companies.map(co=>{
+    const recs=state.vacancies.filter(v=>v.company===co);
+    const elig=recs.filter(isCostEligible);
+    const monthly=elig.reduce((s,r)=>s+costPrimitives(r).monthly,0);
+    const annual=elig.reduce((s,r)=>s+calculateAnnualCost(r,REF_YEAR),0);
+    const two=elig.reduce((s,r)=>s+calculateTwoYearCost(r),0);
+    const hired=recs.filter(r=>r.status==='Hired').length;
+    return {co,vac:recs.length,hired,monthly,annual,two,avg:elig.length?two/elig.length:0};
+  }).sort((a,b)=>b.two-a.two);
+  rows.forEach(r=>{ html+='<tr class="clickable" data-co="'+escapeHtml(r.co)+'"><td class="pos-name">'+escapeHtml(r.co)+'</td><td class="r mono">'+r.vac+'</td><td class="r mono">'+r.hired+'</td><td class="r mono">'+fmt(r.monthly)+'</td><td class="r mono">'+fmt(r.annual)+'</td><td class="r mono"><b>'+fmt(r.two)+'</b></td><td class="r mono">'+fmt(r.avg)+'</td></tr>'; });
+  const gt=rows.reduce((a,r)=>({vac:a.vac+r.vac,hired:a.hired+r.hired,monthly:a.monthly+r.monthly,annual:a.annual+r.annual,two:a.two+r.two}),{vac:0,hired:0,monthly:0,annual:0,two:0});
+  html+='</tbody><tfoot><tr class="tbl-total"><td>Group total</td><td class="r">'+gt.vac+'</td><td class="r">'+gt.hired+'</td><td class="r">'+fmt(gt.monthly)+'</td><td class="r">'+fmt(gt.annual)+'</td><td class="r">'+fmt(gt.two)+'</td><td class="r">—</td></tr></tfoot></table></div>';
+  const cb=el('div');cb.innerHTML=html;compCard.appendChild(cb);
+  c.appendChild(compCard);
+  const cmpChart=el('div','grid');cmpChart.style.marginTop='16px';
+  cmpChart.appendChild(chartCard('Company cost comparison','coCompare','total 2-year cost per company'));
+  c.appendChild(cmpChart);
+  cb.querySelectorAll('tr.clickable').forEach(tr=>tr.onclick=()=>selectCompany(tr.dataset.co));
+
+  // company cards
+  c.appendChild(el('div','section-title',I.grid+' Select a company for its dashboard'));
+  const cards=el('div','co-cards');
+  rows.forEach(r=>{
+    const card=el('div','co-card'+(state.selectedCompany===r.co?' active':''));
+    card.innerHTML='<div class="co-name">'+escapeHtml(r.co)+'</div><div class="co-meta">'+r.vac+' vacancies · '+r.hired+' hired</div>'+
+      '<div class="co-stat"><span>Monthly cost</span><span>'+aedTxt(r.monthly)+'</span></div>'+
+      '<div class="co-stat"><span>2-year cost</span><span>'+aedTxt(r.two)+'</span></div>'+
+      '<div class="co-stat"><span>Avg / hire</span><span>'+aedTxt(r.avg)+'</span></div>';
+    card.onclick=()=>selectCompany(r.co);
+    cards.appendChild(card);
+  });
+  c.appendChild(cards);
+
+  // selected company detail
+  const detailMount=el('div'); detailMount.id='companyDetail'; detailMount.style.marginTop='16px';
+  c.appendChild(detailMount);
+
+  requestAnimationFrame(()=>{
+    const co=rows.map(r=>r.co), vals=rows.map(r=>r.two);
+    makeChart('coCompare','bar',{labels:co,datasets:[{data:vals,backgroundColor:co.map((_,i)=>CHART_COLORS[i%CHART_COLORS.length]),borderRadius:5,maxBarThickness:40}]},barMoneyOpts());
+    if(state.selectedCompany) renderCompanyDetail(state.selectedCompany);
+  });
+}
+function selectCompany(co){ state.selectedCompany=co; render(); setTimeout(()=>{ const m=$('#companyDetail'); if(m&&m.scrollIntoView) m.scrollIntoView({behavior:'smooth',block:'start'}); },60); }
+function renderCompanyDetail(co){
+  const mount=$('#companyDetail'); if(!mount) return;
+  const recs=state.vacancies.filter(v=>v.company===co); const elig=recs.filter(isCostEligible);
+  const monthly=elig.reduce((s,r)=>s+costPrimitives(r).monthly,0);
+  const annual=elig.reduce((s,r)=>s+calculateAnnualCost(r,REF_YEAR),0);
+  const two=elig.reduce((s,r)=>s+calculateTwoYearCost(r),0);
+  const open=recs.filter(r=>r.status!=='Hired'&&r.status!=='Cancelled').length;
+  const hired=recs.filter(r=>r.status==='Hired').length;
+  mount.innerHTML='';
+  mount.appendChild(el('div','section-title',I.building+' '+escapeHtml(co)+' — company dashboard'));
+  const k=el('div','kpi-grid');
+  k.appendChild(kpiCard('Total vacancies',recs.length,null,'ic-blue',I.briefcase,open+' open'));
+  k.appendChild(kpiCard('Hired',hired,null,'ic-green',I.check,''));
+  k.appendChild(kpiCard('Monthly cost',shortAed(monthly),true,'ic-teal',I.repeat,''));
+  k.appendChild(kpiCard('Annual projected',shortAed(annual),true,'ic-amber',I.calendar,REF_YEAR));
+  k.appendChild(kpiCard('2-year cost',shortAed(two),true,'ic-navy',I.money,''));
+  k.appendChild(kpiCard('Avg / hire',shortAed(elig.length?two/elig.length:0),true,'ic-purple',I.target,''));
+  mount.appendChild(k);
+
+  const row=el('div','grid two-col');
+  row.appendChild(chartCard('Department breakdown — '+escapeHtml(co),'coDept',''));
+  row.appendChild(chartCard('12-month forecast — '+escapeHtml(co),'coForecast','from '+monthLabel(REF_YEAR,REF_MONTH)));
+  mount.appendChild(row);
+
+  const tblCard=el('div','card'); tblCard.style.marginTop='16px';
+  tblCard.appendChild(cardHeader('Vacancies at '+escapeHtml(co),recs.length+' records'));
+  let html='<div class="table-scroll"><table class="tbl"><thead><tr><th>ID</th><th>Position</th><th>Dept</th><th>Status</th><th>Hire date</th><th class="r">Monthly</th><th class="r">2-year</th></tr></thead><tbody>';
+  recs.forEach(r=>html+='<tr class="clickable" data-id="'+r.id+'"><td class="mono" style="color:var(--accent)">'+r.id+'</td><td class="pos-name">'+escapeHtml(r.position)+'</td><td>'+escapeHtml(r.department)+'</td><td><span class="badge-status '+statusClass(r.status)+'">'+escapeHtml(r.status)+'</span></td><td class="mono">'+fmtDate(r.hiringDate)+'</td><td class="r mono">'+fmt(calculateRecurringMonthlyCosts(r))+'</td><td class="r mono">'+fmt(calculateTwoYearCost(r))+'</td></tr>');
+  html+='</tbody></table></div>';
+  const b=el('div');b.innerHTML=html;tblCard.appendChild(b);
+  b.querySelectorAll('tr.clickable').forEach(tr=>tr.onclick=()=>openDetail(tr.dataset.id));
+  mount.appendChild(tblCard);
+
+  requestAnimationFrame(()=>{
+    const byDe={}; elig.forEach(r=>byDe[r.department]=(byDe[r.department]||0)+calculateTwoYearCost(r));
+    const de=Object.entries(byDe).sort((a,b)=>b[1]-a[1]);
+    makeChart('coDept','doughnut',{labels:de.map(x=>x[0]),datasets:[{data:de.map(x=>x[1]),backgroundColor:CHART_COLORS,borderWidth:2,borderColor:'#fff'}]},donutMoneyOpts());
+    const fc=forecastRange(elig,REF_YEAR,REF_MONTH,12);
+    makeChart('coForecast','bar',{labels:fc.map(x=>x.label.split(' ')[0]),datasets:[{data:fc.map(x=>x.total),backgroundColor:'#2f6fed',borderRadius:4,maxBarThickness:30}]},barMoneyOpts());
+  });
+}
+
+/* ============================================================================
+   DEPARTMENTS
+   ========================================================================== */
+function renderDepartments(c){
+  c.innerHTML='';
+  const depts=uniq('department');
+  const card=el('div','card');
+  card.appendChild(cardHeader('Department analysis','click a department to expand its positions'));
+  let html='<div class="table-scroll"><table class="tbl"><thead><tr><th>Department</th><th class="r">Vacancies</th><th class="r">Hired</th><th class="r">Monthly cost</th><th class="r">Annual cost</th><th class="r">2-year cost</th><th class="r">Avg / hire</th></tr></thead><tbody>';
+  const rows=depts.map(de=>{
+    const recs=state.vacancies.filter(v=>v.department===de); const elig=recs.filter(isCostEligible);
+    const monthly=elig.reduce((s,r)=>s+costPrimitives(r).monthly,0);
+    const annual=elig.reduce((s,r)=>s+calculateAnnualCost(r,REF_YEAR),0);
+    const two=elig.reduce((s,r)=>s+calculateTwoYearCost(r),0);
+    const hired=recs.filter(r=>r.status==='Hired').length;
+    return {de,vac:recs.length,hired,monthly,annual,two,avg:elig.length?two/elig.length:0};
+  }).sort((a,b)=>b.two-a.two);
+  rows.forEach(r=>html+='<tr class="clickable" data-de="'+escapeHtml(r.de)+'"><td class="pos-name">'+escapeHtml(r.de)+'</td><td class="r mono">'+r.vac+'</td><td class="r mono">'+r.hired+'</td><td class="r mono">'+fmt(r.monthly)+'</td><td class="r mono">'+fmt(r.annual)+'</td><td class="r mono"><b>'+fmt(r.two)+'</b></td><td class="r mono">'+fmt(r.avg)+'</td></tr>');
+  html+='</tbody></table></div>';
+  const b=el('div');b.innerHTML=html;card.appendChild(b);
+  c.appendChild(card);
+
+  const row=el('div','grid two-col');row.style.marginTop='16px';
+  row.appendChild(chartCard('2-year cost by department','deTwo',''));
+  row.appendChild(chartCard('Headcount by department','deCount',''));
+  c.appendChild(row);
+
+  const mount=el('div');mount.id='deptDetail';mount.style.marginTop='16px';c.appendChild(mount);
+  b.querySelectorAll('tr.clickable').forEach(tr=>tr.onclick=()=>{ renderDeptDetail(tr.dataset.de); });
+
+  requestAnimationFrame(()=>{
+    makeChart('deTwo','bar',{labels:rows.map(r=>r.de),datasets:[{data:rows.map(r=>r.two),backgroundColor:rows.map((_,i)=>CHART_COLORS[i%CHART_COLORS.length]),borderRadius:5,maxBarThickness:44}]},barMoneyOpts());
+    makeChart('deCount','bar',{labels:rows.map(r=>r.de),datasets:[{data:rows.map(r=>r.vac),backgroundColor:'#3a4a72',borderRadius:5,maxBarThickness:44}]},countOpts());
+  });
+}
+function renderDeptDetail(de){
+  const mount=$('#deptDetail'); const recs=state.vacancies.filter(v=>v.department===de);
+  mount.innerHTML='';
+  mount.appendChild(el('div','section-title',I.layers+' '+escapeHtml(de)+' — positions'));
+  const card=el('div','card');
+  let html='<div class="table-scroll"><table class="tbl"><thead><tr><th>ID</th><th>Position</th><th>Company</th><th>Status</th><th>Hire date</th><th class="r">Monthly</th><th class="r">2-year</th></tr></thead><tbody>';
+  recs.forEach(r=>html+='<tr class="clickable" data-id="'+r.id+'"><td class="mono" style="color:var(--accent)">'+r.id+'</td><td class="pos-name">'+escapeHtml(r.position)+'</td><td>'+escapeHtml(r.company)+'</td><td><span class="badge-status '+statusClass(r.status)+'">'+escapeHtml(r.status)+'</span></td><td class="mono">'+fmtDate(r.hiringDate)+'</td><td class="r mono">'+fmt(calculateRecurringMonthlyCosts(r))+'</td><td class="r mono">'+fmt(calculateTwoYearCost(r))+'</td></tr>');
+  html+='</tbody></table></div>';
+  const b=el('div');b.innerHTML=html;card.appendChild(b);
+  b.querySelectorAll('tr.clickable').forEach(tr=>tr.onclick=()=>openDetail(tr.dataset.id));
+  mount.appendChild(card);
+  if(mount.scrollIntoView) mount.scrollIntoView({behavior:'smooth',block:'start'});
+}
+
+/* ============================================================================
+   SETTINGS / DATA
+   ========================================================================== */
+function renderSettings(c){
+  c.innerHTML='';
+  const grid=el('div','grid two-col');
+
+  // Export card
+  const exp=el('div','card');
+  exp.appendChild(cardHeader('Export',' download the current dataset (including local edits)'));
+  const eb=el('div','card-b');
+  eb.style.display='flex'; eb.style.flexWrap='wrap'; eb.style.gap='10px';
+  eb.appendChild(actBtn(I.download,'Export JSON',()=>exportJSON()));
+  eb.appendChild(actBtn(I.download,'Export CSV (all)',()=>exportCSV('all')));
+  eb.appendChild(actBtn(I.download,'Monthly cost CSV',()=>exportMonthlyCSV()));
+  eb.appendChild(actBtn(I.download,'Backup (.json)',()=>exportJSON(true)));
+  exp.appendChild(eb);
+  grid.appendChild(exp);
+
+  // Import card
+  const imp=el('div','card');
+  imp.appendChild(cardHeader('Import','replace the dataset from a JSON file'));
+  const ib=el('div','card-b');
+  ib.innerHTML='<p class="muted" style="margin:0 0 12px;font-size:13px">Load a JSON file exported from this app (or produced by <code style="font-family:var(--mono)">convert.py</code>). This replaces the working dataset in your browser.</p>';
+  const file=el('input'); file.type='file'; file.accept='.json,application/json'; file.style.display='none';
+  const impBtn=actBtn(I.upload,'Choose JSON file…',()=>file.click());
+  file.onchange=e=>{ const f=e.target.files[0]; if(f) importJSON(f); file.value=''; };
+  ib.appendChild(impBtn); ib.appendChild(file);
+  imp.appendChild(ib);
+  grid.appendChild(imp);
+  c.appendChild(grid);
+
+  // Reset + status
+  const reset=el('div','card'); reset.style.marginTop='16px';
+  reset.appendChild(cardHeader('Data state',''));
+  const rb=el('div','card-b');
+  rb.innerHTML='<div class="detail-grid">'+
+    '<div class="d-item"><div class="d-l">Source</div><div class="d-v">'+escapeHtml(state.meta.source||'data.json')+'</div></div>'+
+    '<div class="d-item"><div class="d-l">Records</div><div class="d-v mono">'+state.vacancies.length+'</div></div>'+
+    '<div class="d-item"><div class="d-l">Currency</div><div class="d-v">'+escapeHtml(state.meta.currency||'AED')+'</div></div>'+
+    '<div class="d-item"><div class="d-l">Local changes</div><div class="d-v">'+(state.dirty?'<span style="color:var(--warn)">Unsaved — export to keep</span>':'None')+'</div></div>'+
+    '</div>';
+  const rbtn=actBtn(I.refresh,'Reset to original data.json',()=>confirmReset());
+  rbtn.className='btn danger'; rbtn.style.marginTop='14px';
+  rb.appendChild(rbtn);
+  reset.appendChild(rb);
+  c.appendChild(reset);
+
+  // GitHub note
+  const note=el('div','card'); note.style.marginTop='16px';
+  note.appendChild(cardHeader('How persistence works',''));
+  const nb=el('div','card-b');
+  nb.style.fontSize='13px'; nb.style.color='var(--text-2)'; nb.style.lineHeight='1.65';
+  nb.innerHTML='Add, edit and delete actions are saved to <b>this browser only</b> (localStorage). '+
+    'They do <b>not</b> change the <code style="font-family:var(--mono)">data.json</code> file in your GitHub repository. '+
+    'To make changes permanent for everyone: <b>Export JSON</b> here, then replace <code style="font-family:var(--mono)">data.json</code> in the repo and commit.';
+  note.appendChild(nb);
+  c.appendChild(note);
+}
+
+/* ============================================================================
+   DRAWER — Add / Edit / Duplicate form
+   ========================================================================== */
+let formState=null;
+function costFieldKeys(){
+  // Derive editable cost fields from the first record that has them, else from any.
+  const sample = state.vacancies.find(v=>v.costs) || state.original[0];
+  const g=k=> sample&&sample.costs&&sample.costs[k]? Object.keys(sample.costs[k]) : [];
+  return {
+    oneTime:g('oneTime'), monthlyRecurring:g('monthlyRecurring'),
+    twoYear:g('twoYear'), annual:g('annual'), monthly:g('monthly')
+  };
+}
+function blankRecord(){
+  const keys=costFieldKeys(); const mk=arr=>{const o={};arr.forEach(k=>o[k]=0);return o;};
+  return {id:null,qty:1,employeeName:null,position:'',company:'',department:'',collarType:'',employmentType:'',localOverseas:'',status:'Planned',hiringDate:'',remarks:'',
+    costs:{oneTime:mk(keys.oneTime),monthlyRecurring:mk(keys.monthlyRecurring),twoYear:mk(keys.twoYear),annual:mk(keys.annual),monthly:mk(keys.monthly)}};
+}
+function openForm(id){
+  const editing = id!=null;
+  const rec = editing ? JSON.parse(JSON.stringify(state.vacancies.find(v=>v.id===id))) : blankRecord();
+  formState={rec, editing};
+  $('#drawerTitle').textContent = editing? 'Edit vacancy' : 'Add vacancy';
+  $('#drawerSub').textContent = editing? rec.id : 'New position';
+  const body=$('#drawerBody'); body.innerHTML='';
+
+  // Section: details
+  body.appendChild(formSection('Position details','', [
+    fgSelect('Company','company',rec.company,['',...uniq('company')],true,true),
+    fgSelect('Department','department',rec.department,['',...uniq('department')],true,true),
+    fgText('Job title / position','position',rec.position,true),
+    fgSelect('Status','status',rec.status,STATUSES,true),
+    fgDate('Hiring date','hiringDate',rec.hiringDate,true),
+    fgNumber('Quantity','qty',rec.qty,1),
+    fgSelect('Type','collarType',rec.collarType,['','Blue Collar','White Collar'],false),
+    fgSelect('Employment','employmentType',rec.employmentType,['','Permanent','Contractual'],false),
+    fgSelect('Local / Overseas','localOverseas',rec.localOverseas,['','Local','Overseas'],false),
+    fgText('Employee name (if hired)','employeeName',rec.employeeName||'',false),
+  ]));
+
+  const keys=costFieldKeys();
+  body.appendChild(costSection('One-time costs','Charged once, in the hiring month','oneTime',keys.oneTime,rec));
+  body.appendChild(costSection('Monthly recurring costs','Every month from the hiring month','monthlyRecurring',keys.monthlyRecurring,rec));
+  body.appendChild(costSection('Monthly cost','Every month (column Y)','monthly',keys.monthly,rec));
+  body.appendChild(costSection('Annual costs','Once per year, on the anniversary','annual',keys.annual,rec));
+  body.appendChild(costSection('Two-year costs','Once per 24-month cycle','twoYear',keys.twoYear,rec));
+
+  // live preview
+  const prev=el('div','form-sec');
+  prev.innerHTML='<div class="form-sec-t">Auto-calculated</div><div class="calc-preview" id="calcPreview"></div>';
+  body.appendChild(prev);
+
+  $('#drawerFoot').innerHTML='';
+  const cancel=el('button','btn','Cancel'); cancel.onclick=closeDrawer;
+  const save=el('button','btn primary',I.check+'Save vacancy'); save.onclick=saveForm;
+  $('#drawerFoot').appendChild(cancel); $('#drawerFoot').appendChild(save);
+
+  body.querySelectorAll('input,select').forEach(inp=>inp.addEventListener('input',updateCalcPreview));
+  updateCalcPreview();
+  openDrawer();
+}
+function costSection(title,freq,bucket,fields,rec){
+  const sec=el('div','form-sec');
+  sec.innerHTML='<div class="form-sec-t">'+escapeHtml(title)+'<span class="freq">'+escapeHtml(freq)+'</span></div>';
+  const grid=el('div','form-grid');
+  if(!fields.length){ grid.innerHTML='<div class="fg full"><span class="muted" style="font-size:12.5px">No fields.</span></div>'; }
+  fields.forEach(f=>{
+    const val=rec.costs[bucket][f]||0;
+    const fg=el('div','fg');
+    fg.innerHTML='<label>'+escapeHtml(f.replace(/\s*\(.*?\)/,''))+'</label><div class="cur-in"><input type="number" min="0" step="1" data-bucket="'+bucket+'" data-field="'+escapeHtml(f)+'" value="'+(Number(val)||0)+'"></div>';
+    grid.appendChild(fg);
+  });
+  sec.appendChild(grid);
+  return sec;
+}
+function updateCalcPreview(){
+  const rec=collectForm(false);
+  const p=costPrimitives(rec);
+  const two=calculateTwoYearCost(rec);
+  const cur=calculateAnnualCost(rec,REF_YEAR);
+  $('#calcPreview').innerHTML=
+    row('One-time total',p.oneTime)+
+    row('Recurring / month',p.monthly)+
+    row('Annual (per year)',p.annual)+
+    row('Two-year cycle',p.twoYear)+
+    row('This year ('+REF_YEAR+')',cur)+
+    '<div class="cp-row total"><span>2-year employment cost</span><span>'+aedTxt(two)+'</span></div>';
+  function row(l,v){ return '<div class="cp-row"><span>'+l+'</span><span>'+aedTxt(v)+'</span></div>'; }
+}
+function collectForm(validate){
+  const rec = JSON.parse(JSON.stringify(formState.rec));
+  const body=$('#drawerBody');
+  body.querySelectorAll('[data-field-key]').forEach(inp=>{
+    const k=inp.dataset.fieldKey; let v=inp.value;
+    if(k==='qty') v=Math.max(1,parseInt(v)||1);
+    rec[k]= (k==='employeeName' && !v)? null : v;
+  });
+  body.querySelectorAll('[data-bucket]').forEach(inp=>{
+    const b=inp.dataset.bucket, f=inp.dataset.field; rec.costs[b][f]=Math.max(0,Number(inp.value)||0);
+  });
+  return rec;
+}
+function saveForm(){
+  const body=$('#drawerBody');
+  // validation
+  let ok=true;
+  body.querySelectorAll('.fg').forEach(fg=>fg.classList.remove('invalid'));
+  const check=(key,cond,msg)=>{ const inp=body.querySelector('[data-field-key="'+key+'"]'); if(!inp)return; if(!cond){ const fg=inp.closest('.fg'); fg.classList.add('invalid'); let e=fg.querySelector('.err-msg'); if(!e){e=el('span','err-msg');fg.appendChild(e);} e.textContent=msg; ok=false; } };
+  const rec=collectForm(true);
+  check('company', !!rec.company, 'Select a company');
+  check('department', !!rec.department, 'Select a department');
+  check('position', !!String(rec.position).trim(), 'Enter a position');
+  check('hiringDate', !!parseDate(rec.hiringDate), 'Enter a valid hiring date');
+  // negative cost guard
+  let neg=false; body.querySelectorAll('[data-bucket]').forEach(i=>{ if(Number(i.value)<0){neg=true;i.closest('.fg').classList.add('invalid');} });
+  if(neg){ toast('Costs cannot be negative','bad'); ok=false; }
+  if(!ok){ toast('Please fix the highlighted fields','bad'); return; }
+
+  if(formState.editing){
+    const idx=state.vacancies.findIndex(v=>v.id===rec.id);
+    state.vacancies[idx]=rec;
+    toast('Vacancy '+rec.id+' updated','good');
+  }else{
+    rec.id=nextId(rec.hiringDate);
+    state.vacancies.push(rec);
+    toast('Vacancy '+rec.id+' added','good');
+  }
+  persist(); closeDrawer(); render();
+}
+function nextId(hiringDate){
+  const d=parseDate(hiringDate); const yr=d? d.y : REF_YEAR;
+  let max=0;
+  state.vacancies.forEach(v=>{ const m=/^VAC-(\d{4})-(\d+)$/.exec(v.id||''); if(m && +m[1]===yr) max=Math.max(max,+m[2]); });
+  return 'VAC-'+yr+'-'+String(max+1).padStart(3,'0');
+}
+function duplicateVacancy(id){
+  const src=state.vacancies.find(v=>v.id===id); if(!src) return;
+  const copy=JSON.parse(JSON.stringify(src)); copy.id=nextId(src.hiringDate); copy.employeeName=null; copy.status='Planned';
+  state.vacancies.push(copy); persist(); render();
+  toast('Duplicated as '+copy.id,'good');
+}
+function confirmDelete(id){
+  const rec=state.vacancies.find(v=>v.id===id); if(!rec) return;
+  $('#drawerTitle').textContent='Delete vacancy';
+  $('#drawerSub').textContent=rec.id;
+  $('#drawerBody').innerHTML='<div style="padding:8px 0"><div class="i-ic ic-red" style="width:46px;height:46px;border-radius:12px;display:grid;place-items:center;margin-bottom:16px">'+I.trash+'</div>'+
+    '<h3 style="font-size:16px;margin-bottom:8px">Are you sure you want to delete this vacancy?</h3>'+
+    '<p class="muted" style="font-size:13.5px">This removes <b>'+escapeHtml(rec.position)+'</b> ('+rec.id+') at '+escapeHtml(rec.company)+' from your local dataset. This cannot be undone (but you can reset to the original data.json from Settings).</p></div>';
+  $('#drawerFoot').innerHTML='';
+  const cancel=el('button','btn','Cancel'); cancel.onclick=closeDrawer;
+  const del=el('button','btn danger',I.trash+'Delete vacancy');
+  del.onclick=()=>{ state.vacancies=state.vacancies.filter(v=>v.id!==id); persist(); closeDrawer(); render(); toast('Vacancy '+id+' deleted','good'); };
+  $('#drawerFoot').appendChild(cancel); $('#drawerFoot').appendChild(del);
+  openDrawer();
+}
+
+/* ============================================================================
+   DRAWER — Detail / audit view (cost timeline + breakdown)
+   ========================================================================== */
+function openDetail(id){
+  const rec=state.vacancies.find(v=>v.id===id); if(!rec) return;
+  $('#drawerTitle').textContent=rec.position||'Vacancy';
+  $('#drawerSub').textContent=rec.id+' · '+rec.company;
+  const p=costPrimitives(rec); const two=calculateTwoYearCost(rec);
+  const d=parseDate(rec.hiringDate);
+  let html='<div class="detail-grid">'+
+    di('Company',rec.company)+di('Department',rec.department)+
+    di('Status','<span class="badge-status '+statusClass(rec.status)+'">'+escapeHtml(rec.status)+'</span>')+
+    di('Hiring date',fmtDate(rec.hiringDate))+
+    di('Type',rec.collarType||'—')+di('Employment',rec.employmentType||'—')+
+    di('Quantity',rec.qty)+di('2-year cost','<span class="mono">'+aedTxt(two)+'</span>')+
+    '</div>';
+
+  // cost categories
+  html+=costCat('One-time (hiring month)',rec.costs.oneTime,rec.qty);
+  html+=costCat('Monthly recurring',Object.assign({},rec.costs.monthlyRecurring,rec.costs.monthly),rec.qty);
+  html+=costCat('Annual',rec.costs.annual,rec.qty);
+  html+=costCat('Two-year',rec.costs.twoYear,rec.qty);
+
+  // timeline (24 months)
+  if(d){
+    const tl=[];
+    for(let k=0;k<24;k++){ const y=d.y+Math.floor((d.m-1+k)/12); const m=((d.m-1+k)%12)+1; tl.push({y,m,v:calculateMonthlyCost(rec,y,m),k}); }
+    const max=Math.max(...tl.map(x=>x.v),1);
+    html+='<div class="cost-cat"><h4><span>24-month cost timeline</span><span>'+aedTxt(two)+'</span></h4>';
+    html+='<div class="tl-bars">';
+    tl.forEach(x=>{ const h=Math.round((x.v/max)*100); const hl=x.k%12===0; html+='<div class="tl-col" title="'+monthLabel(x.y,x.m)+': '+aedTxt(x.v)+'"><div class="bar'+(hl?' hl':'')+'" style="height:'+h+'%"></div><div class="lb">'+MONTHS[x.m-1]+' '+String(x.y).slice(2)+'</div></div>'; });
+    html+='</div>';
+    // table of timeline
+    html+='<div class="table-scroll tl-table"><table class="tbl"><thead><tr><th>Month</th><th class="r">Cost</th><th>What lands this month</th></tr></thead><tbody>';
+    tl.forEach(x=>{ const det=monthlyCostDetail(rec,x.y,x.m); const cats=Array.from(new Set(det.map(dd=>dd.category))); html+='<tr><td class="mono">'+monthLabel(x.y,x.m)+'</td><td class="r mono">'+(x.v?aedTxt(x.v):'—')+'</td><td class="muted" style="font-size:12px">'+(cats.join(' · ')||'—')+'</td></tr>'; });
+    html+='</tbody></table></div></div>';
+  }
+  $('#drawerBody').innerHTML=html;
+  $('#drawerFoot').innerHTML='';
+  const editB=el('button','btn',I.edit+'Edit'); editB.onclick=()=>openForm(id);
+  const dupB=el('button','btn',I.copy+'Duplicate'); dupB.onclick=()=>{closeDrawer();duplicateVacancy(id);};
+  const close=el('button','btn primary','Close'); close.onclick=closeDrawer;
+  $('#drawerFoot').appendChild(dupB);$('#drawerFoot').appendChild(editB);$('#drawerFoot').appendChild(close);
+  openDrawer();
+}
+function di(l,v){ return '<div class="d-item"><div class="d-l">'+l+'</div><div class="d-v">'+ (typeof v==='string'&&v.startsWith('<')? v : escapeHtml(v)) +'</div></div>'; }
+function costCat(title,obj,qty){
+  const entries=Object.entries(obj||{}).filter(([,v])=>Number(v)>0);
+  if(!entries.length) return '';
+  const tot=entries.reduce((s,[,v])=>s+Number(v)*(qty||1),0);
+  let h='<div class="cost-cat"><h4><span>'+escapeHtml(title)+'</span><span>'+aedTxt(tot)+'</span></h4>';
+  entries.forEach(([k,v])=>{ h+='<div class="cost-line"><span>'+escapeHtml(k.replace(/\s*\(.*?\)/,''))+(qty>1?' × '+qty:'')+'</span><span>'+aedTxt(Number(v)*(qty||1))+'</span></div>'; });
+  return h+'</div>';
+}
+
+/* ============================================================================
+   IMPORT / EXPORT
+   ========================================================================== */
+function download(filename, content, type){
+  const blob=new Blob([content],{type:type||'application/json'});
+  const url=URL.createObjectURL(blob); const a=document.createElement('a');
+  a.href=url; a.download=filename; document.body.appendChild(a); a.click();
+  setTimeout(()=>{ document.body.removeChild(a); URL.revokeObjectURL(url); },100);
+}
+function exportJSON(backup){
+  const out={metadata:Object.assign({},state.meta,{generatedAt:new Date().toISOString(),recordCount:state.vacancies.length,exportedBy:'HR Hiring app'}),columns:state.columns,vacancies:state.vacancies};
+  const name=backup? 'hr-backup-'+new Date().toISOString().slice(0,10)+'.json':'data.json';
+  download(name, JSON.stringify(out,null,2));
+  toast('Exported '+name,'good');
+}
+function csvCell(v){ if(v==null)return''; v=String(v); return /[",\n]/.test(v)? '"'+v.replace(/"/g,'""')+'"':v; }
+function exportCSV(scope){
+  const recs=state.vacancies;
+  const head=['ID','Position','Company','Department','Status','Hiring Date','Qty','One-time','Monthly','Annual','Two-year cost'];
+  let csv=head.join(',')+'\n';
+  recs.forEach(r=>{ csv+=[r.id,r.position,r.company,r.department,r.status,r.hiringDate,r.qty,calculateOneTimeCosts(r),calculateRecurringMonthlyCosts(r),costPrimitives(r).annual,calculateTwoYearCost(r)].map(csvCell).join(',')+'\n'; });
+  download('vacancies.csv',csv,'text/csv');
+  toast('Exported vacancies.csv','good');
+}
+function exportMonthlyCSV(){
+  const yr=state.monthlyYear;
+  let csv=['ID','Position','Company','Department','Hire Date',...MONTHS,'Annual Total'].join(',')+'\n';
+  state.vacancies.forEach(r=>{ const cells=[]; let t=0; for(let m=1;m<=12;m++){const v=calculateMonthlyCost(r,yr,m);cells.push(v);t+=v;} csv+=[r.id,r.position,r.company,r.department,r.hiringDate,...cells,t].map(csvCell).join(',')+'\n'; });
+  download('monthly-cost-'+yr+'.csv',csv,'text/csv');
+  toast('Exported monthly-cost-'+yr+'.csv','good');
+}
+function importJSON(file){
+  const reader=new FileReader();
+  reader.onload=()=>{
+    try{
+      const data=JSON.parse(reader.result);
+      const vac=data.vacancies||data;
+      if(!Array.isArray(vac)) throw new Error('No vacancies array found');
+      state.vacancies=vac.map(normalize);
+      if(data.columns) state.columns=data.columns;
+      if(data.metadata) state.meta=Object.assign(state.meta,data.metadata);
+      persist(); render(); toast('Imported '+state.vacancies.length+' vacancies','good');
+    }catch(e){ toast('Import failed: '+e.message,'bad'); }
+  };
+  reader.readAsText(file);
+}
+function confirmReset(){
+  $('#drawerTitle').textContent='Reset data';
+  $('#drawerSub').textContent='';
+  $('#drawerBody').innerHTML='<div style="padding:8px 0"><div class="i-ic ic-amber" style="width:46px;height:46px;border-radius:12px;display:grid;place-items:center;margin-bottom:16px">'+I.refresh+'</div><h3 style="font-size:16px;margin-bottom:8px">Reset to the original data.json?</h3><p class="muted" style="font-size:13.5px">This discards all local add/edit/delete changes in this browser and reloads the original dataset. Export first if you want to keep your changes.</p></div>';
+  $('#drawerFoot').innerHTML='';
+  const cancel=el('button','btn','Cancel');cancel.onclick=closeDrawer;
+  const ok=el('button','btn danger',I.refresh+'Reset data');
+  ok.onclick=()=>{ localStorage.removeItem(STORE_KEY); state.vacancies=state.original.map(v=>JSON.parse(JSON.stringify(v))); state.dirty=false; renderDirty(); closeDrawer(); render(); toast('Reset to original data','good'); };
+  $('#drawerFoot').appendChild(cancel);$('#drawerFoot').appendChild(ok);
+  openDrawer();
+}
+
+/* ============================================================================
+   GLOBAL SEARCH
+   ========================================================================== */
+function runSearch(q){
+  const box=$('#searchResults'); q=q.trim().toLowerCase();
+  if(!q){ box.classList.remove('open'); box.innerHTML=''; return; }
+  const hits=state.vacancies.filter(v=>[v.id,v.position,v.company,v.department,v.employeeName].some(x=>x&&String(x).toLowerCase().includes(q))).slice(0,12);
+  if(!hits.length){ box.innerHTML='<div class="sr-empty">No matches for “'+escapeHtml(q)+'”</div>'; box.classList.add('open'); return; }
+  box.innerHTML=hits.map(v=>'<div class="sr-item" data-id="'+v.id+'"><span class="sr-id">'+v.id+'</span><span>'+escapeHtml(v.position)+' <span class="muted">· '+escapeHtml(v.company)+'</span></span></div>').join('');
+  box.classList.add('open');
+  box.querySelectorAll('.sr-item').forEach(it=>it.onclick=()=>{ box.classList.remove('open'); $('#globalSearch').value=''; openDetail(it.dataset.id); });
+}
+
+/* ============================================================================
+   UI BUILDERS
+   ========================================================================== */
+function kpiCard(label,val,money,iconCls,icon,sub){
+  const v = money? val : escapeHtml(val);
+  return el('div','kpi','<div class="k-top"><div class="k-ic '+iconCls+'">'+icon+'</div><div class="k-label">'+escapeHtml(label)+'</div></div>'+
+    '<div class="k-val">'+v+'</div>'+(sub?'<div class="k-sub">'+escapeHtml(sub)+'</div>':''));
+}
+function cardHeader(title,hint,extra){ const h=el('div','card-h','<h3>'+escapeHtml(title)+'</h3>'+(hint?'<span class="hint">'+escapeHtml(hint)+'</span>':'')); if(extra){const sp=el('div','spacer');h.appendChild(sp);h.appendChild(extra);} return h; }
+function cardBody(html){ return el('div','card-b',html); }
+function chartCard(title,canvasId,hint,extra){
+  const card=el('div','card');
+  card.appendChild(cardHeader(title,hint,extra));
+  const b=el('div','card-b'); const w=el('div','chart-wrap'); w.innerHTML='<canvas id="'+canvasId+'"></canvas>'; b.appendChild(w); card.appendChild(b);
+  return card;
+}
+function emptyState(icon,title,msg){ return el('div','empty',icon+'<h4>'+escapeHtml(title)+'</h4><p>'+escapeHtml(msg)+'</p>'); }
+function actBtn(icon,label,fn){ const b=el('button','btn',icon+escapeHtml(label)); b.onclick=fn; return b; }
+
+function selectFilt(label,key,options,fmtFn){
+  const wrap=el('div','filt'); const id='f_'+key;
+  let html='<label>'+label+'</label><select id="'+id+'">';
+  options.forEach(o=>{ const val=o===''?'':o; const txt=fmtFn?fmtFn(o):(o===''?'All':o); html+='<option value="'+val+'"'+(String(state.filters[key])===String(val)?' selected':'')+'>'+escapeHtml(txt)+'</option>'; });
+  html+='</select>'; wrap.innerHTML=html;
+  wrap.querySelector('select').onchange=e=>{ state.filters[key]=e.target.value; render(); };
+  return wrap;
+}
+function selectFiltRaw(label,value,options,fn){
+  const wrap=el('div','filt'); let html='<label>'+label+'</label><select>';
+  options.forEach(o=>html+='<option'+(String(o)===String(value)?' selected':'')+'>'+escapeHtml(o)+'</option>');
+  html+='</select>'; wrap.innerHTML=html; wrap.querySelector('select').onchange=e=>fn(e.target.value); return wrap;
+}
+function vacSelect(label,key,options,fmtFn){
+  const wrap=el('div','filt'); let html='<label>'+label+'</label><select>';
+  options.forEach(o=>{ const txt=fmtFn?fmtFn(o):(o===''?'All':o); html+='<option value="'+escapeHtml(o)+'"'+(String(state.vacFilters[key])===String(o)?' selected':'')+'>'+escapeHtml(txt)+'</option>'; });
+  html+='</select>'; wrap.innerHTML=html;
+  wrap.querySelector('select').onchange=e=>{ state.vacFilters[key]=e.target.value; state.vacPage=1; render(); };
+  return wrap;
+}
+function yearSelector(fn){
+  const sel=el('select'); sel.className='';
+  const wrap=el('div','filt'); wrap.style.margin='0';
+  let html=''; ['',...years()].forEach(y=>html+='<option value="'+(y||'')+'"'+(String(state.filters.year)===String(y)?' selected':'')+'>'+(y===''?'All years':y)+'</option>');
+  sel.innerHTML=html; sel.onchange=e=>fn(e.target.value);
+  sel.style.cssText='padding:5px 9px;border:1px solid var(--border-strong);border-radius:7px;font-size:12.5px;background:#fff';
+  return sel;
+}
+// form field builders
+function fgText(label,key,val,req){ return '<div class="fg"><label>'+label+(req?' <span class="req">*</span>':'')+'</label><input type="text" data-field-key="'+key+'" value="'+escapeHtml(val||'')+'"><span class="err-msg"></span></div>'; }
+function fgNumber(label,key,val,min){ return '<div class="fg"><label>'+label+'</label><input type="number" min="'+(min||0)+'" data-field-key="'+key+'" value="'+(val!=null?escapeHtml(val):'')+'"><span class="err-msg"></span></div>'; }
+function fgDate(label,key,val,req){ return '<div class="fg"><label>'+label+(req?' <span class="req">*</span>':'')+'</label><input type="date" data-field-key="'+key+'" value="'+escapeHtml((val||'').slice(0,10))+'"><span class="err-msg"></span></div>'; }
+function fgSelect(label,key,val,options,req,allowNew){
+  let html='<div class="fg"><label>'+label+(req?' <span class="req">*</span>':'')+'</label><select data-field-key="'+key+'">';
+  const has=options.includes(val);
+  options.forEach(o=>html+='<option value="'+escapeHtml(o)+'"'+(String(o)===String(val)?' selected':'')+'>'+(o===''?'— select —':escapeHtml(o))+'</option>');
+  if(allowNew && val && !has) html+='<option value="'+escapeHtml(val)+'" selected>'+escapeHtml(val)+'</option>';
+  if(allowNew) html+='<option value="__new__">+ Add new…</option>';
+  html+='</select><span class="err-msg"></span></div>';
+  return html;
+}
+function formSection(title,freq,fields){
+  const sec=el('div','form-sec');
+  sec.innerHTML='<div class="form-sec-t">'+escapeHtml(title)+(freq?'<span class="freq">'+escapeHtml(freq)+'</span>':'')+'</div><div class="form-grid">'+fields.join('')+'</div>';
+  // handle "add new" for company/department selectors
+  sec.querySelectorAll('select[data-field-key]').forEach(sel=>{
+    sel.addEventListener('change',()=>{
+      if(sel.value==='__new__'){
+        const label=sel.previousElementSibling? sel.closest('.fg').querySelector('label').textContent.replace(' *','').trim():'value';
+        const nv=(prompt('Enter new '+label+':')||'').trim();
+        if(nv){ const opt=new Option(nv,nv,true,true); sel.add(opt, sel.options[sel.options.length-1]); sel.value=nv; }
+        else { sel.selectedIndex=0; }
+        updateCalcPreview();
+      }
+    });
+  });
+  return sec;
+}
+
+/* ------------------------------------------------------------------ charts */
+function makeChart(id,type,data,options){
+  const cv=document.getElementById(id); if(!cv) return;
+  if(state.charts[id]){ try{state.charts[id].destroy();}catch(e){} }
+  state.charts[id]=new Chart(cv.getContext('2d'),{type,data,options});
+}
+const gridColor='#eef1f6';
+function moneyTick(v){ return shortAed(v).replace('AED ',''); }
+function barMoneyOpts(title){
+  return {responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false},title:{display:!!title,text:title,color:'#8b93a6',font:{size:11,weight:'600'}},tooltip:{callbacks:{label:c=>' '+aedTxt(c.parsed.y!=null?c.parsed.y:c.parsed.x)}}},
+    scales:{x:{grid:{display:false},ticks:{color:'#8b93a6',font:{size:11}}},y:{grid:{color:gridColor},ticks:{color:'#8b93a6',font:{size:11},callback:moneyTick}}}};
+}
+function countOpts(){ return {responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},scales:{x:{grid:{display:false},ticks:{color:'#8b93a6'}},y:{grid:{color:gridColor},ticks:{color:'#8b93a6',precision:0}}}}; }
+function donutMoneyOpts(){ return {responsive:true,maintainAspectRatio:false,cutout:'62%',plugins:{legend:{position:'right',labels:{color:'#5a6478',font:{size:11.5},boxWidth:12,padding:10}},tooltip:{callbacks:{label:c=>' '+c.label+': '+aedTxt(c.parsed)}}}}; }
+function donutCountOpts(){ return {responsive:true,maintainAspectRatio:false,cutout:'62%',plugins:{legend:{position:'right',labels:{color:'#5a6478',font:{size:11.5},boxWidth:12,padding:10}},tooltip:{callbacks:{label:c=>' '+c.label+': '+c.parsed}}}}; }
+
+/* ------------------------------------------------------------------ toast */
+function toast(msg,type){
+  const t=el('div','toast'+(type?' '+type:''), (type==='good'?I.check:type==='bad'?I.alert:'')+'<span>'+escapeHtml(msg)+'</span>');
+  $('#toastWrap').appendChild(t);
+  setTimeout(()=>{ t.style.transition='opacity .3s,transform .3s'; t.style.opacity='0'; t.style.transform='translateX(20px)'; setTimeout(()=>t.remove(),300); },2800);
+}
+
+/* ------------------------------------------------------------------ drawer */
+function openDrawer(){ $('#overlay').classList.add('open'); $('#drawer').classList.add('open'); }
+function closeDrawer(){ $('#overlay').classList.remove('open'); $('#drawer').classList.remove('open'); formState=null; }
+
+/* ------------------------------------------------------------------ events */
+function wireGlobalEvents(){
+  $('#hamburger').onclick=()=>$('#sidebar').classList.toggle('open');
+  $('#drawerClose').onclick=closeDrawer;
+  $('#overlay').onclick=closeDrawer;
+  const gs=$('#globalSearch');
+  gs.addEventListener('input',e=>runSearch(e.target.value));
+  gs.addEventListener('focus',e=>{ if(e.target.value)runSearch(e.target.value); });
+  document.addEventListener('click',e=>{
+    if(!e.target.closest('.global-search')) $('#searchResults').classList.remove('open');
+    if(!e.target.closest('.act-wrap')) closeAllMenus();
+  });
+  document.addEventListener('keydown',e=>{ if(e.key==='Escape'){ closeDrawer(); $('#searchResults').classList.remove('open'); } });
+}
+
+boot();
+})();
+
+</script>
+</body>
+</html>

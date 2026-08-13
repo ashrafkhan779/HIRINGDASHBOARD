@@ -1137,9 +1137,10 @@ function renderCompanyDetail(co){
   row.appendChild(chartCard('Positions by cost — '+escapeHtml(co),'coPosCost',(pi? pi.label:'2-year')+' cost per position (top 12)'));
   row.appendChild(chartCard('Positions by headcount — '+escapeHtml(co),'coPosCount','number of positions (top 12)'));
   mount.appendChild(row);
-  const rowH=el('div','grid two-col'); rowH.style.marginTop='16px';
-  rowH.appendChild(chartCard('Cost by cost heads — '+escapeHtml(co),'coHeads',(pi? pi.label:'24-month')+' total per line item (visa, salary…)'));
-  rowH.appendChild(chartCard('Headcount by cost heads — '+escapeHtml(co),'coHeadsCount','number of hires carrying each cost line (salary, accommodation…)'));
+  const rowH=el('div','grid'); rowH.style.marginTop='16px';
+  const headsCard=chartCard('Cost by cost heads — '+escapeHtml(co),'coHeads',(pi? pi.label:'24-month')+' total per line item (visa, salary…)');
+  headsCard.querySelector('.chart-wrap').style.height='430px';
+  rowH.appendChild(headsCard);
   mount.appendChild(rowH);
   const row2=el('div','grid two-col'); row2.style.marginTop='16px';
   row2.appendChild(chartCard('Hiring by month — '+escapeHtml(co),'coHireMonth','headcount joining per month'));
@@ -1165,17 +1166,7 @@ function renderCompanyDetail(co){
     makeChart('coPosCount','bar',{labels:pn.map(x=>x[0]),datasets:[{data:pn.map(x=>x[1]),backgroundColor:'#3a4a72',borderRadius:4,maxBarThickness:20}]},withDL(barCountOptsH(),DL_BAR_COUNT));
     // cost by cost heads (period-aware)
     const hd=Object.entries(costHeadsForPeriod(elig, state.coFilters)).filter(x=>x[1]>0).sort((a,b)=>b[1]-a[1]);
-    makeChart('coHeads','bar',{labels:hd.map(x=>x[0].replace(/\s*\(.*?\)/,'')),datasets:[{data:hd.map(x=>x[1]),backgroundColor:hd.map((_,i)=>CHART_COLORS[i%CHART_COLORS.length]),borderRadius:4,maxBarThickness:20}]},withDL(barMoneyOptsH(),DL_BAR));
-    // headcount by cost head: how many hires carry each cost line (amount > 0)
-    const headCounts={};
-    elig.forEach(r=>{
-      const q=Number(r.qty)||1;
-      ['oneTime','monthlyRecurring','monthly','annual','twoYear'].forEach(b=>{
-        for(const [k,v] of Object.entries(r.costs[b]||{})) if((Number(v)||0)>0) headCounts[k]=(headCounts[k]||0)+q;
-      });
-    });
-    const hc=Object.entries(headCounts).sort((a,b)=>b[1]-a[1]);
-    makeChart('coHeadsCount','bar',{labels:hc.map(x=>x[0].replace(/\s*\(.*?\)/,'')),datasets:[{data:hc.map(x=>x[1]),backgroundColor:hc.map((_,i)=>CHART_COLORS[i%CHART_COLORS.length]),borderRadius:4,maxBarThickness:20}]},withDL(barCountOptsH(),DL_BAR_COUNT));
+    makeChart('coHeads','bar',{labels:hd.map(x=>x[0].replace(/\s*\(.*?\)/,'')),datasets:[{data:hd.map(x=>x[1]),backgroundColor:hd.map((_,i)=>CHART_COLORS[i%CHART_COLORS.length]),borderRadius:5,maxBarThickness:26}]},withDL(barMoneyOptsH(),DL_BAR));
     // hiring by month
     const byMonth={};
     recs.forEach(r=>{ const d=parseDate(r.hiringDate); if(!d) return; const k=d.y*100+d.m; byMonth[k]=(byMonth[k]||0)+(Number(r.qty)||1); });

@@ -281,6 +281,13 @@ body{background:
 .tbl.matrix .mono{font-size:10.5px;}
 .tbl.matrix thead th{position:sticky;top:0;background:var(--card,#fff);z-index:2;}
 .matrix-wrap{max-height:62vh;overflow:auto;border-radius:10px;}
+/* two-row KPI layout (7 per row) */
+.kpi-row{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:12px;}
+.kpi-row .kpi{padding:12px 13px;}
+.kpi-row .k-val{font-size:18px;}
+.kpi-row .k-sub{font-size:10.5px;}
+@media(max-width:1400px){.kpi-row{grid-template-columns:repeat(4,minmax(0,1fr));}}
+@media(max-width:760px){.kpi-row{grid-template-columns:repeat(2,minmax(0,1fr));}}
 .tbl tr.row-selected td{background:#eef4ff;}
 .tbl tr.row-selected td:first-child{box-shadow:inset 3px 0 0 var(--accent);}
 
@@ -394,6 +401,8 @@ const state = {
   dirty: false,
   route: 'overview',
   filters: {year:'', month:'', company:'', department:'', status:''},
+  coFilters: {department:'', status:''},
+  deFilters: {company:'', status:''},
   vacFilters: {company:'', department:'', position:'', status:'', month:'', year:'', search:''},
   vacSort: {key:'id', dir:1},
   vacPage: 1,
@@ -631,15 +640,16 @@ function filteredForOverview(){
     if(f.department && v.department!==f.department) return false;
     if(f.status && v.status!==f.status) return false;
     const d=parseDate(v.hiringDate);
-    if(f.year && (!d || d.y!==+f.year)) return false;
     if(f.month && (!d || d.m!==+f.month)) return false;
+    // NOTE: Year is a cost-view selector (2026/2027/2028), not a hiring-date filter —
+    // hires from 2026 keep incurring recurring/annual costs in later years.
     return true;
   });
 }
 function years(){
   const ys=new Set();
   state.vacancies.forEach(v=>{ const d=parseDate(v.hiringDate); if(d) ys.add(d.y); });
-  ys.add(REF_YEAR);
+  ys.add(REF_YEAR); ys.add(REF_YEAR+1); ys.add(REF_YEAR+2);
   return Array.from(ys).sort();
 }
 
@@ -648,9 +658,8 @@ function years(){
    ========================================================================== */
 function renderOverview(c){
   c.innerHTML='';
-  // Filter bar
   const fb = el('div','filterbar');
-  fb.appendChild(selectFilt('Year','year',['',...years()], v=>v===''?'All years':v));
+  fb.appendChild(selectFilt('Year','year',['',...years()], v=>v===''?'Current ('+REF_YEAR+')':v));
   fb.appendChild(selectFilt('Month','month',['',...MONTHS.map((_,i)=>i+1)], v=>v===''?'All months':MONTHS[v-1]));
   fb.appendChild(selectFilt('Company','company',['',...uniq('company')]));
   fb.appendChild(selectFilt('Department','department',['',...uniq('department')]));
@@ -665,6 +674,7 @@ function renderOverview(c){
   const eligible = recs.filter(isCostEligible);
   const agg = aggregate(recs);
   const count = s => recs.filter(v=>v.status===s).length;
+  const viewYear = +state.filters.year || REF_YEAR;   // cost-view year (2026 / 2027 / 2028)
 
   const activeVac = recs.filter(v=>v.status!=='Hired'&&v.status!=='Cancelled').length;
   const plannedHires = recs.filter(v=>v.status!=='Cancelled').length;
@@ -672,34 +682,36 @@ function renderOverview(c){
   const curMonthCost = eligible.reduce((s,r)=>s+calculateMonthlyCost(r,REF_YEAR,REF_MONTH),0);
   const nm = REF_MONTH===12?{y:REF_YEAR+1,m:1}:{y:REF_YEAR,m:REF_MONTH+1};
   const nextMonthCost = eligible.reduce((s,r)=>s+calculateMonthlyCost(r,nm.y,nm.m),0);
-  const curYearForecast = eligible.reduce((s,r)=>s+calculateAnnualCost(r,REF_YEAR),0);
+  const yearCost = eligible.reduce((s,r)=>s+calculateAnnualCost(r,viewYear),0);
   const avgPerHire = eligible.length? Math.round(agg.twoYear/eligible.length):0;
-  const totalHiringCost = agg.oneTime;
-  const totalCommit = agg.monthlyCommit;
 
-  const kpis = el('div','kpi-grid');
-  // headcount / pipeline KPIs
-  kpis.appendChild(kpiCard('Active Vacancies', activeVac, null, 'ic-blue', I.briefcase, plannedHires+' planned hires'));
-  kpis.appendChild(kpiCard('Hired Employees', hired, null, 'ic-green', I.check, 'filled positions'));
-  kpis.appendChild(kpiCard('Open', count('Open'), null, 'ic-blue', I.inbox, 'actively sourcing'));
-  kpis.appendChild(kpiCard('Interviewing', count('Interviewing'), null, 'ic-purple', I.users, 'in interviews'));
-  kpis.appendChild(kpiCard('Offer', count('Offer'), null, 'ic-amber', I.flag, 'offers extended'));
-  kpis.appendChild(kpiCard('On Hold', count('On Hold'), null, 'ic-red', I.clock, 'paused'));
-  // cost KPIs — ordered
-  kpis.appendChild(kpiCard('Total 2-Year Cost', shortAed(agg.twoYear), true,'ic-navy', I.money, 'full committed spend'));
-  kpis.appendChild(kpiCard('This Year', shortAed(curYearForecast), true,'ic-blue', I.chart, REF_YEAR+' total'));
-  kpis.appendChild(kpiCard('This Month', shortAed(curMonthCost), true,'ic-teal', I.calendar, monthLabel(REF_YEAR,REF_MONTH)));
-  kpis.appendChild(kpiCard('Next Month', shortAed(nextMonthCost), true,'ic-amber', I.trend, monthLabel(nm.y,nm.m)+' forecast'));
-  kpis.appendChild(kpiCard('Monthly Commitment', shortAed(totalCommit), true,'ic-green', I.repeat, 'recurring / month'));
-  kpis.appendChild(kpiCard('Avg Cost / Hire', shortAed(avgPerHire), true,'ic-purple', I.target, 'over 24 months'));
-  kpis.appendChild(kpiCard('One-Time Hiring', shortAed(totalHiringCost), true,'ic-red', I.flag, 'visa, airfare, agency'));
-  c.appendChild(kpis);
+  // Row 1 — pipeline / headcount (7 cards)
+  const row1k = el('div','kpi-row');
+  row1k.appendChild(kpiCard('Active Vacancies', activeVac, null, 'ic-blue', I.briefcase, plannedHires+' planned'));
+  row1k.appendChild(kpiCard('Hired Employees', hired, null, 'ic-green', I.check, 'filled positions'));
+  row1k.appendChild(kpiCard('Open', count('Open'), null, 'ic-blue', I.inbox, 'actively sourcing'));
+  row1k.appendChild(kpiCard('Interviewing', count('Interviewing'), null, 'ic-purple', I.users, 'in interviews'));
+  row1k.appendChild(kpiCard('Offer', count('Offer'), null, 'ic-amber', I.flag, 'offers extended'));
+  row1k.appendChild(kpiCard('On Hold', count('On Hold'), null, 'ic-red', I.clock, 'paused'));
+  row1k.appendChild(kpiCard('Cancelled', count('Cancelled'), null, 'ic-red', I.x, 'excluded from costs'));
+  c.appendChild(row1k);
+
+  // Row 2 — cost (7 cards)
+  const row2k = el('div','kpi-row'); row2k.style.marginTop='12px';
+  row2k.appendChild(kpiCard('Total 2-Year Cost', shortAed(agg.twoYear), true,'ic-navy', I.money, 'full committed spend'));
+  row2k.appendChild(kpiCard(viewYear===REF_YEAR?'This Year':'Year '+viewYear, shortAed(yearCost), true,'ic-blue', I.chart, viewYear+' total'));
+  row2k.appendChild(kpiCard('This Month', shortAed(curMonthCost), true,'ic-teal', I.calendar, monthLabel(REF_YEAR,REF_MONTH)));
+  row2k.appendChild(kpiCard('Next Month', shortAed(nextMonthCost), true,'ic-amber', I.trend, monthLabel(nm.y,nm.m)+' forecast'));
+  row2k.appendChild(kpiCard('Monthly Commitment', shortAed(agg.monthlyCommit), true,'ic-green', I.repeat, 'recurring / month'));
+  row2k.appendChild(kpiCard('Avg Cost / Hire', shortAed(avgPerHire), true,'ic-purple', I.target, 'over 24 months'));
+  row2k.appendChild(kpiCard('One-Time Hiring', shortAed(agg.oneTime), true,'ic-red', I.flag, 'visa, airfare, agency'));
+  c.appendChild(row2k);
 
   // Charts
   const row1=el('div','grid two-col'); row1.style.marginTop='16px';
-  row1.appendChild(chartCard('Monthly Employment Cost', 'ovMonthly', 'values shown per month',
+  row1.appendChild(chartCard('Monthly Employment Cost', 'ovMonthly', 'per-month values for the selected year',
     yearSelector(v=>{ state.filters.year=v; render(); })));
-  row1.appendChild(chartCard('Cost by Department','ovDept','total 2-year cost per department'));
+  row1.appendChild(chartCard('Cost by Department','ovDept', state.filters.year? viewYear+' cost per department':'total 2-year cost per department'));
   c.appendChild(row1);
 
   const row2=el('div','grid two-col'); row2.style.marginTop='16px';
@@ -712,23 +724,24 @@ function renderOverview(c){
   row3.appendChild(chartCard('Cost by Cost Heads','ovHeads','24-month total per line item (visa, salary…)'));
   c.appendChild(row3);
 
-  requestAnimationFrame(()=>drawOverviewCharts(recs, eligible));
+  requestAnimationFrame(()=>drawOverviewCharts(recs, eligible, viewYear));
 }
 
-function drawOverviewCharts(recs, eligible){
-  const yr=+state.filters.year || REF_YEAR;
-  // Monthly cost for the chosen year — with values
+function drawOverviewCharts(recs, eligible, viewYear){
+  const yr = viewYear || REF_YEAR;
+  // Monthly cost for the selected year — values on bars (works for 2026, 2027, 2028)
   const monthly = MONTHS.map((_,i)=> eligible.reduce((s,r)=>s+calculateMonthlyCost(r,yr,i+1),0));
   makeChart('ovMonthly','bar',{labels:MONTHS,datasets:[{data:monthly,backgroundColor:'#2f6fed',borderRadius:5,maxBarThickness:38}]},withDL(barMoneyOpts('Cost — '+yr),DL_BAR));
-  // Department — with values
-  const byDe={}; eligible.forEach(r=>byDe[r.department]=(byDe[r.department]||0)+calculateTwoYearCost(r));
-  const deE=Object.entries(byDe).sort((a,b)=>b[1]-a[1]);
+  // Department — year cost when a year is selected, else 2-year total
+  const useYearCost = !!state.filters.year;
+  const byDe={}; eligible.forEach(r=>{ const v=useYearCost? calculateAnnualCost(r,yr) : calculateTwoYearCost(r); byDe[r.department]=(byDe[r.department]||0)+v; });
+  const deE=Object.entries(byDe).filter(x=>x[1]>0).sort((a,b)=>b[1]-a[1]);
   makeChart('ovDept','doughnut',{labels:deE.map(x=>x[0]),datasets:[{data:deE.map(x=>x[1]),backgroundColor:CHART_COLORS,borderWidth:2,borderColor:'#fff'}]},withDL(donutMoneyOpts(),DL_DONUT_MONEY));
-  // Status — with values
+  // Status — counts
   const byStatus={}; STATUSES.forEach(s=>byStatus[s]=0); recs.forEach(r=>byStatus[r.status]=(byStatus[r.status]||0)+1);
   const stE=Object.entries(byStatus).filter(x=>x[1]>0);
   makeChart('ovStatus','doughnut',{labels:stE.map(x=>x[0]),datasets:[{data:stE.map(x=>x[1]),backgroundColor:stE.map(x=>statusColor(x[0])),borderWidth:2,borderColor:'#fff'}]},withDL(donutCountOpts(),DL_DONUT_COUNT));
-  // Breakdown by category — with values
+  // Breakdown by category + cost heads (24-month view)
   let oneTime=0,monthly24=0,annual2=0,two=0;
   const catTotals={};
   eligible.forEach(r=>{
@@ -739,10 +752,8 @@ function drawOverviewCharts(recs, eligible){
   });
   makeChart('ovBreakdown','bar',{labels:['Recurring ×24','One-time','Annual ×2','Two-year'],
     datasets:[{data:[monthly24,oneTime,annual2,two],backgroundColor:['#2f6fed','#d1495b','#c98a12','#178a94'],borderRadius:5,maxBarThickness:60}]},withDL(barMoneyOpts(),DL_BAR));
-  // Fixed vs recurring — with values
   makeChart('ovFixedRec','doughnut',{labels:['One-time (fixed)','Recurring over 24 mo'],datasets:[{data:[oneTime,monthly24+annual2+two],backgroundColor:['#d1495b','#2f6fed'],borderWidth:2,borderColor:'#fff'}]},withDL(donutMoneyOpts(),DL_DONUT_MONEY));
-  // Cost heads — with values
-  const cats=Object.entries(catTotals).sort((a,b)=>b[1]-a[1]);
+  const cats=Object.entries(catTotals).filter(x=>x[1]>0).sort((a,b)=>b[1]-a[1]);
   makeChart('ovHeads','bar',{labels:cats.map(x=>x[0].replace(/\s*\(.*?\)/,'')),datasets:[{data:cats.map(x=>x[1]),backgroundColor:cats.map((_,i)=>CHART_COLORS[i%CHART_COLORS.length]),borderRadius:4,maxBarThickness:22}]},withDL(barMoneyOptsH(),DL_BAR));
 }
 function statusColor(s){ return {Planned:'#8b93a6',Open:'#2f6fed',Interviewing:'#7b5ea7',Offer:'#c98a12',Hired:'#1e9e6a','On Hold':'#b9c0d1',Cancelled:'#d1495b'}[s]||'#8b93a6'; }
@@ -961,9 +972,19 @@ function renderEmployees(c){
 /* ============================================================================
    COMPANIES
    ========================================================================== */
+function coFiltered(){
+  const f=state.coFilters;
+  return state.vacancies.filter(v=>{
+    if(f.department && v.department!==f.department) return false;
+    if(f.status && v.status!==f.status) return false;
+    return true;
+  });
+}
 function companyRows(){
-  return uniq('company').map(co=>{
-    const recs=state.vacancies.filter(v=>v.company===co);
+  const base=coFiltered();
+  const cos=Array.from(new Set(base.map(v=>v.company).filter(Boolean))).sort();
+  return cos.map(co=>{
+    const recs=base.filter(v=>v.company===co);
     const elig=recs.filter(isCostEligible);
     const monthly=elig.reduce((s,r)=>s+costPrimitives(r).monthly,0);
     const annual=elig.reduce((s,r)=>s+calculateAnnualCost(r,REF_YEAR),0);
@@ -974,10 +995,21 @@ function companyRows(){
 }
 function renderCompanies(c){
   c.innerHTML='';
+  // Filters — linked to the matrix, chart and company dashboard below
+  const fb=el('div','filterbar');
+  fb.appendChild(coSelect('Department','department',['',...uniq('department')]));
+  fb.appendChild(coSelect('Status','status',['',...STATUSES]));
+  const reset=el('button','btn ghost',I.refresh+'Reset filters');
+  reset.style.marginLeft='auto';
+  reset.onclick=()=>{ state.coFilters={department:'',status:''}; render(); };
+  fb.appendChild(reset);
+  c.appendChild(fb);
+
   const rows=companyRows();
   // Companies matrix
   const compCard=el('div','card');
   compCard.appendChild(cardHeader('Companies Matrix','click a company row to open its dashboard'));
+  if(!rows.length){ compCard.appendChild(emptyState(I.building,'No companies','No records match the current filters.')); c.appendChild(compCard); return; }
   let html='<div class="table-scroll"><table class="tbl"><thead><tr><th>Company</th><th class="r">Vacancies</th><th class="r">Hired</th><th class="r">Monthly cost</th><th class="r">Annual cost</th><th class="r">2-year cost</th><th class="r">Avg / hire</th></tr></thead><tbody>';
   rows.forEach(r=>{ const sel=state.selectedCompany===r.co; html+='<tr class="clickable'+(sel?' row-selected':'')+'" data-co="'+escapeHtml(r.co)+'"><td class="pos-name">'+escapeHtml(r.co)+'</td><td class="r mono">'+r.vac+'</td><td class="r mono">'+r.hired+'</td><td class="r mono">'+fmt(r.monthly)+'</td><td class="r mono">'+fmt(r.annual)+'</td><td class="r mono"><b>'+fmt(r.two)+'</b></td><td class="r mono">'+fmt(r.avg)+'</td></tr>'; });
   const gt=rows.reduce((a,r)=>({vac:a.vac+r.vac,hired:a.hired+r.hired,monthly:a.monthly+r.monthly,annual:a.annual+r.annual,two:a.two+r.two}),{vac:0,hired:0,monthly:0,annual:0,two:0});
@@ -986,12 +1018,10 @@ function renderCompanies(c){
   c.appendChild(compCard);
   cb.querySelectorAll('tr.clickable').forEach(tr=>tr.onclick=()=>selectCompany(tr.dataset.co));
 
-  // comparison chart with values
   const cmpChart=el('div','grid');cmpChart.style.marginTop='16px';
   cmpChart.appendChild(chartCard('Company cost comparison','coCompare','total 2-year cost per company'));
   c.appendChild(cmpChart);
 
-  // company dashboard — only when a company is selected
   if(state.selectedCompany){
     const mount=el('div'); mount.id='companyDetail'; mount.style.marginTop='16px';
     c.appendChild(mount);
@@ -1002,10 +1032,18 @@ function renderCompanies(c){
     if(state.selectedCompany) renderCompanyDetail(state.selectedCompany);
   });
 }
-function selectCompany(co){ state.selectedCompany = (state.selectedCompany===co)? co : co; render(); setTimeout(()=>{ const m=$('#companyDetail'); if(m&&m.scrollIntoView) m.scrollIntoView({behavior:'smooth',block:'start'}); },80); }
+function coSelect(label,key,options){
+  const wrap=el('div','filt'); let html='<label>'+label+'</label><select>';
+  options.forEach(o=>html+='<option value="'+escapeHtml(o)+'"'+(String(state.coFilters[key])===String(o)?' selected':'')+'>'+(o===''?'All':escapeHtml(o))+'</option>');
+  html+='</select>'; wrap.innerHTML=html;
+  wrap.querySelector('select').onchange=e=>{ state.coFilters[key]=e.target.value; render(); };
+  return wrap;
+}
+function selectCompany(co){ state.selectedCompany=co; render(); setTimeout(()=>{ const m=$('#companyDetail'); if(m&&m.scrollIntoView) m.scrollIntoView({behavior:'smooth',block:'start'}); },80); }
 function renderCompanyDetail(co){
   const mount=$('#companyDetail'); if(!mount) return;
-  const recs=state.vacancies.filter(v=>v.company===co); const elig=recs.filter(isCostEligible);
+  const recs=coFiltered().filter(v=>v.company===co); const elig=recs.filter(isCostEligible);
+  if(!recs.length){ mount.innerHTML=''; mount.appendChild(emptyState(I.building,escapeHtml(co),'No records for this company under the current filters.')); return; }
   const monthly=elig.reduce((s,r)=>s+costPrimitives(r).monthly,0);
   const annual=elig.reduce((s,r)=>s+calculateAnnualCost(r,REF_YEAR),0);
   const two=elig.reduce((s,r)=>s+calculateTwoYearCost(r),0);
@@ -1023,9 +1061,13 @@ function renderCompanyDetail(co){
   mount.appendChild(k);
 
   const row=el('div','grid two-col'); row.style.marginTop='16px';
-  row.appendChild(chartCard('Department breakdown — '+escapeHtml(co),'coDept',''));
-  row.appendChild(chartCard('12-month forecast — '+escapeHtml(co),'coForecast','from '+monthLabel(REF_YEAR,REF_MONTH)));
+  row.appendChild(chartCard('Positions by cost — '+escapeHtml(co),'coPosCost','2-year cost per position (top 12)'));
+  row.appendChild(chartCard('Positions by headcount — '+escapeHtml(co),'coPosCount','number of positions (top 12)'));
   mount.appendChild(row);
+  const row2=el('div','grid two-col'); row2.style.marginTop='16px';
+  row2.appendChild(chartCard('Hiring by month — '+escapeHtml(co),'coHireMonth','headcount joining per month'));
+  row2.appendChild(chartCard('12-month forecast — '+escapeHtml(co),'coForecast','from '+monthLabel(REF_YEAR,REF_MONTH)));
+  mount.appendChild(row2);
 
   const tblCard=el('div','card'); tblCard.style.marginTop='16px';
   tblCard.appendChild(cardHeader('Vacancies at '+escapeHtml(co),recs.length+' records'));
@@ -1037,9 +1079,19 @@ function renderCompanyDetail(co){
   mount.appendChild(tblCard);
 
   requestAnimationFrame(()=>{
-    const byDe={}; elig.forEach(r=>byDe[r.department]=(byDe[r.department]||0)+calculateTwoYearCost(r));
-    const de=Object.entries(byDe).sort((a,b)=>b[1]-a[1]);
-    makeChart('coDept','doughnut',{labels:de.map(x=>x[0]),datasets:[{data:de.map(x=>x[1]),backgroundColor:CHART_COLORS,borderWidth:2,borderColor:'#fff'}]},withDL(donutMoneyOpts(),DL_DONUT_MONEY));
+    // positions by 2-year cost + by headcount
+    const byPosCost={}, byPosCount={};
+    elig.forEach(r=>{ byPosCost[r.position]=(byPosCost[r.position]||0)+calculateTwoYearCost(r); byPosCount[r.position]=(byPosCount[r.position]||0)+(Number(r.qty)||1); });
+    const pc=Object.entries(byPosCost).sort((a,b)=>b[1]-a[1]).slice(0,12);
+    const pn=Object.entries(byPosCount).sort((a,b)=>b[1]-a[1]).slice(0,12);
+    makeChart('coPosCost','bar',{labels:pc.map(x=>x[0]),datasets:[{data:pc.map(x=>x[1]),backgroundColor:pc.map((_,i)=>CHART_COLORS[i%CHART_COLORS.length]),borderRadius:4,maxBarThickness:20}]},withDL(barMoneyOptsH(),DL_BAR));
+    makeChart('coPosCount','bar',{labels:pn.map(x=>x[0]),datasets:[{data:pn.map(x=>x[1]),backgroundColor:'#3a4a72',borderRadius:4,maxBarThickness:20}]},withDL(barCountOptsH(),DL_BAR_COUNT));
+    // hiring by month
+    const byMonth={};
+    recs.forEach(r=>{ const d=parseDate(r.hiringDate); if(!d) return; const k=d.y*100+d.m; byMonth[k]=(byMonth[k]||0)+(Number(r.qty)||1); });
+    const mk=Object.keys(byMonth).map(Number).sort();
+    makeChart('coHireMonth','bar',{labels:mk.map(k=>monthLabel(Math.floor(k/100),k%100)),datasets:[{data:mk.map(k=>byMonth[k]),backgroundColor:'#1e9e6a',borderRadius:5,maxBarThickness:44}]},withDL(countOpts(),DL_BAR_COUNT));
+    // forecast
     const fc=forecastRange(elig,REF_YEAR,REF_MONTH,12);
     makeChart('coForecast','bar',{labels:fc.map(x=>x.label.split(' ')[0]),datasets:[{data:fc.map(x=>x.total),backgroundColor:'#2f6fed',borderRadius:4,maxBarThickness:30}]},withDL(barMoneyOpts(),DL_BAR));
   });
@@ -1048,40 +1100,72 @@ function renderCompanyDetail(co){
 /* ============================================================================
    DEPARTMENTS
    ========================================================================== */
+function deFiltered(){
+  const f=state.deFilters;
+  return state.vacancies.filter(v=>{
+    if(f.company && v.company!==f.company) return false;
+    if(f.status && v.status!==f.status) return false;
+    return true;
+  });
+}
+function deSelect(label,key,options){
+  const wrap=el('div','filt'); let html='<label>'+label+'</label><select>';
+  options.forEach(o=>html+='<option value="'+escapeHtml(o)+'"'+(String(state.deFilters[key])===String(o)?' selected':'')+'>'+(o===''?'All':escapeHtml(o))+'</option>');
+  html+='</select>'; wrap.innerHTML=html;
+  wrap.querySelector('select').onchange=e=>{ state.deFilters[key]=e.target.value; render(); };
+  return wrap;
+}
 function renderDepartments(c){
   c.innerHTML='';
-  const depts=uniq('department');
+  // Filters — linked to table, charts and drill-down
+  const fb=el('div','filterbar');
+  fb.appendChild(deSelect('Company','company',['',...uniq('company')]));
+  fb.appendChild(deSelect('Status','status',['',...STATUSES]));
+  const reset=el('button','btn ghost',I.refresh+'Reset filters');
+  reset.style.marginLeft='auto';
+  reset.onclick=()=>{ state.deFilters={company:'',status:''}; render(); };
+  fb.appendChild(reset);
+  c.appendChild(fb);
+
+  const base=deFiltered();
+  const depts=Array.from(new Set(base.map(v=>v.department).filter(Boolean))).sort();
   const card=el('div','card');
-  card.appendChild(cardHeader('Department analysis','click a department to expand its positions'));
-  let html='<div class="table-scroll"><table class="tbl"><thead><tr><th>Department</th><th class="r">Vacancies</th><th class="r">Hired</th><th class="r">Monthly cost</th><th class="r">Annual cost</th><th class="r">2-year cost</th><th class="r">Avg / hire</th></tr></thead><tbody>';
+  card.appendChild(cardHeader('Department analysis','with company split of headcount · click a department to expand its positions'));
+  if(!depts.length){ card.appendChild(emptyState(I.layers,'No departments','No records match the current filters.')); c.appendChild(card); return; }
+  let html='<div class="table-scroll"><table class="tbl"><thead><tr><th>Department</th><th class="r">Vacancies</th><th>Companies (headcount)</th><th class="r">Hired</th><th class="r">Monthly cost</th><th class="r">Annual cost</th><th class="r">2-year cost</th><th class="r">Avg / hire</th></tr></thead><tbody>';
   const rows=depts.map(de=>{
-    const recs=state.vacancies.filter(v=>v.department===de); const elig=recs.filter(isCostEligible);
+    const recs=base.filter(v=>v.department===de); const elig=recs.filter(isCostEligible);
     const monthly=elig.reduce((s,r)=>s+costPrimitives(r).monthly,0);
     const annual=elig.reduce((s,r)=>s+calculateAnnualCost(r,REF_YEAR),0);
     const two=elig.reduce((s,r)=>s+calculateTwoYearCost(r),0);
     const hired=recs.filter(r=>r.status==='Hired').length;
-    return {de,vac:recs.length,hired,monthly,annual,two,avg:elig.length?two/elig.length:0};
+    const byCo={}; recs.forEach(r=>byCo[r.company]=(byCo[r.company]||0)+(Number(r.qty)||1));
+    const coStr=Object.entries(byCo).sort((a,b)=>b[1]-a[1]).map(([co,n])=>escapeHtml(co)+' ('+n+')').join(' · ');
+    return {de,vac:recs.length,hired,monthly,annual,two,avg:elig.length?two/elig.length:0,coStr,byCo};
   }).sort((a,b)=>b.two-a.two);
-  rows.forEach(r=>html+='<tr class="clickable" data-de="'+escapeHtml(r.de)+'"><td class="pos-name">'+escapeHtml(r.de)+'</td><td class="r mono">'+r.vac+'</td><td class="r mono">'+r.hired+'</td><td class="r mono">'+fmt(r.monthly)+'</td><td class="r mono">'+fmt(r.annual)+'</td><td class="r mono"><b>'+fmt(r.two)+'</b></td><td class="r mono">'+fmt(r.avg)+'</td></tr>');
+  rows.forEach(r=>html+='<tr class="clickable" data-de="'+escapeHtml(r.de)+'"><td class="pos-name">'+escapeHtml(r.de)+'</td><td class="r mono">'+r.vac+'</td><td style="font-size:12px;color:var(--text-2)">'+r.coStr+'</td><td class="r mono">'+r.hired+'</td><td class="r mono">'+fmt(r.monthly)+'</td><td class="r mono">'+fmt(r.annual)+'</td><td class="r mono"><b>'+fmt(r.two)+'</b></td><td class="r mono">'+fmt(r.avg)+'</td></tr>');
   html+='</tbody></table></div>';
   const b=el('div');b.innerHTML=html;card.appendChild(b);
   c.appendChild(card);
 
   const row=el('div','grid two-col');row.style.marginTop='16px';
-  row.appendChild(chartCard('2-year cost by department','deTwo',''));
-  row.appendChild(chartCard('Headcount by department','deCount',''));
+  row.appendChild(chartCard('2-year cost by department','deTwo','values shown'));
+  row.appendChild(chartCard('Headcount by department & company','deStack','stacked by company — shows where each department\'s headcount sits'));
   c.appendChild(row);
 
   const mount=el('div');mount.id='deptDetail';mount.style.marginTop='16px';c.appendChild(mount);
   b.querySelectorAll('tr.clickable').forEach(tr=>tr.onclick=()=>{ renderDeptDetail(tr.dataset.de); });
 
   requestAnimationFrame(()=>{
-    makeChart('deTwo','bar',{labels:rows.map(r=>r.de),datasets:[{data:rows.map(r=>r.two),backgroundColor:rows.map((_,i)=>CHART_COLORS[i%CHART_COLORS.length]),borderRadius:5,maxBarThickness:44}]},barMoneyOpts());
-    makeChart('deCount','bar',{labels:rows.map(r=>r.de),datasets:[{data:rows.map(r=>r.vac),backgroundColor:'#3a4a72',borderRadius:5,maxBarThickness:44}]},countOpts());
+    makeChart('deTwo','bar',{labels:rows.map(r=>r.de),datasets:[{data:rows.map(r=>r.two),backgroundColor:rows.map((_,i)=>CHART_COLORS[i%CHART_COLORS.length]),borderRadius:5,maxBarThickness:44}]},withDL(barMoneyOpts(),DL_BAR));
+    // stacked headcount: one dataset per company
+    const cos=Array.from(new Set(base.map(v=>v.company).filter(Boolean))).sort();
+    const datasets=cos.map((co,i)=>({label:co,data:rows.map(r=>r.byCo[co]||0),backgroundColor:CHART_COLORS[i%CHART_COLORS.length],borderRadius:3,maxBarThickness:44}));
+    makeChart('deStack','bar',{labels:rows.map(r=>r.de),datasets},withDL(stackedCountOpts(),DL_STACK));
   });
 }
 function renderDeptDetail(de){
-  const mount=$('#deptDetail'); const recs=state.vacancies.filter(v=>v.department===de);
+  const mount=$('#deptDetail'); const recs=deFiltered().filter(v=>v.department===de);
   mount.innerHTML='';
   mount.appendChild(el('div','section-title',I.layers+' '+escapeHtml(de)+' — positions'));
   const card=el('div','card');
@@ -1554,6 +1638,17 @@ const DL_BAR={display:true,anchor:'end',align:'end',offset:-2,clamp:true,color:'
 const DL_DONUT_MONEY={display:c=>(c.dataset.data[c.dataIndex]||0)>0,color:'#fff',font:{size:10,weight:'700'},formatter:v=>shortAed(v).replace('AED ','')};
 const DL_DONUT_COUNT={display:c=>(c.dataset.data[c.dataIndex]||0)>0,color:'#fff',font:{size:11,weight:'700'},formatter:v=>v};
 function withDL(opts,dl){ opts.plugins=Object.assign({},opts.plugins,{datalabels:dl}); return opts; }
+const DL_BAR_COUNT={display:true,anchor:'end',align:'end',offset:-2,clamp:true,color:'#2a3350',font:{size:10,weight:'700'},formatter:v=>v||''};
+const DL_STACK={display:c=>(c.dataset.data[c.dataIndex]||0)>0,color:'#fff',font:{size:9.5,weight:'700'},formatter:v=>v};
+function barCountOptsH(){
+  return {responsive:true,maintainAspectRatio:false,indexAxis:'y',plugins:{legend:{display:false}},
+    scales:{y:{grid:{display:false},ticks:{color:'#8b93a6',font:{size:10.5}}},x:{grid:{color:gridColor},grace:'18%',ticks:{color:'#8b93a6',font:{size:10},precision:0}}}};
+}
+function stackedCountOpts(){
+  return {responsive:true,maintainAspectRatio:false,
+    plugins:{legend:{position:'bottom',labels:{color:'#5a6478',font:{size:11},boxWidth:12,padding:10}},tooltip:{callbacks:{label:c=>' '+c.dataset.label+': '+c.parsed.y}}},
+    scales:{x:{stacked:true,grid:{display:false},ticks:{color:'#8b93a6',font:{size:11}}},y:{stacked:true,grid:{color:gridColor},grace:'8%',ticks:{color:'#8b93a6',precision:0}}}};
+}
 function barMoneyOptsH(){
   return {responsive:true,maintainAspectRatio:false,indexAxis:'y',plugins:{legend:{display:false},tooltip:{callbacks:{label:c=>' '+aedTxt(c.parsed.x)}}},
     scales:{y:{grid:{display:false},ticks:{color:'#8b93a6',font:{size:10.5}}},x:{grid:{color:gridColor},grace:'18%',ticks:{color:'#8b93a6',font:{size:10},callback:moneyTick}}}};
@@ -1563,7 +1658,7 @@ function barMoneyOpts(title){
   return {responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false},title:{display:!!title,text:title,color:'#8b93a6',font:{size:11,weight:'600'}},tooltip:{callbacks:{label:c=>' '+aedTxt(c.parsed.y!=null?c.parsed.y:c.parsed.x)}}},
     scales:{x:{grid:{display:false},ticks:{color:'#8b93a6',font:{size:11}}},y:{grid:{color:gridColor},grace:'14%',ticks:{color:'#8b93a6',font:{size:11},callback:moneyTick}}}};
 }
-function countOpts(){ return {responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},scales:{x:{grid:{display:false},ticks:{color:'#8b93a6'}},y:{grid:{color:gridColor},ticks:{color:'#8b93a6',precision:0}}}}; }
+function countOpts(){ return {responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},scales:{x:{grid:{display:false},ticks:{color:'#8b93a6'}},y:{grid:{color:gridColor},grace:'14%',ticks:{color:'#8b93a6',precision:0}}}}; }
 function donutMoneyOpts(){ return {responsive:true,maintainAspectRatio:false,cutout:'62%',plugins:{legend:{position:'right',labels:{color:'#5a6478',font:{size:11.5},boxWidth:12,padding:10}},tooltip:{callbacks:{label:c=>' '+c.label+': '+aedTxt(c.parsed)}}}}; }
 function donutCountOpts(){ return {responsive:true,maintainAspectRatio:false,cutout:'62%',plugins:{legend:{position:'right',labels:{color:'#5a6478',font:{size:11.5},boxWidth:12,padding:10}},tooltip:{callbacks:{label:c=>' '+c.label+': '+c.parsed}}}}; }
 

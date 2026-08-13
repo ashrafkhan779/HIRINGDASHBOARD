@@ -409,6 +409,8 @@ const state = {
   vacPerPage: 12,
   monthlyYear: REF_YEAR,
   selectedCompany: null,
+  selectedHiredCompany: null,
+  hiredYear: '',
   charts: {},
   searchIdx: -1,
 };
@@ -439,6 +441,8 @@ function monthLabel(y,m){ return MONTHS[m-1]+' '+y; }
 /* ============================================================================
    COST CALCULATION ENGINE   (pure functions; no DOM)
    ========================================================================== */
+/* Effective cost-start date: the actual hired date for Hired employees, else the planned hiring date. */
+function effDate(rec){ return (rec.status==='Hired' && rec.hiredDate)? rec.hiredDate : rec.hiringDate; }
 function costPrimitives(rec){
   const q = Number(rec.qty)||1;
   const c = rec.costs || {};
@@ -451,7 +455,7 @@ function costPrimitives(rec){
 }
 function isCostEligible(rec){ return rec.status !== 'Cancelled'; }
 function monthsSince(rec, year, month){
-  const d = parseDate(rec.hiringDate); if(!d) return null;
+  const d = parseDate(effDate(rec)); if(!d) return null;
   return (year - d.y)*12 + (month - d.m);
 }
 /* Total cost for one record in a given calendar month. */
@@ -483,7 +487,7 @@ function monthlyCostDetail(rec, year, month){
 }
 function calculateAnnualCost(rec, year){ let t=0; for(let m=1;m<=12;m++) t+=calculateMonthlyCost(rec,year,m); return t; }
 function calculateTwoYearCost(rec){
-  const d = parseDate(rec.hiringDate); if(!d) return 0;
+  const d = parseDate(effDate(rec)); if(!d) return 0;
   let t=0;
   for(let k=0;k<24;k++){ const y=d.y+Math.floor((d.m-1+k)/12); const m=((d.m-1+k)%12)+1; t+=calculateMonthlyCost(rec,y,m); }
   return t;
@@ -502,7 +506,7 @@ function forecastRange(records, startY, startM, nMonths){
   return arr;
 }
 function generateMonthlyForecast(rec, nMonths){
-  const d=parseDate(rec.hiringDate); if(!d) return [];
+  const d=parseDate(effDate(rec)); if(!d) return [];
   return forecastRange([rec], d.y, d.m, nMonths);
 }
 
@@ -573,6 +577,7 @@ function normalize(v){
   v = Object.assign({}, v);
   v.qty = Number(v.qty)||1;
   v.status = v.status || 'Planned';
+  v.hiredDate = v.hiredDate || null;
   v.costs = v.costs || {oneTime:{},monthlyRecurring:{},twoYear:{},annual:{},monthly:{}};
   ['oneTime','monthlyRecurring','twoYear','annual','monthly'].forEach(k=>{ v.costs[k]=v.costs[k]||{}; });
   return v;
@@ -593,10 +598,10 @@ function showLoadError(err){
 const NAV = [
   {group:'Analyze', items:[['overview','Overview',I.grid],['monthly','Monthly Cost',I.calendar]]},
   {group:'Manage', items:[['vacancies','Vacancies',I.briefcase,true],['employees','Employees / Hires',I.users]]},
-  {group:'Structure', items:[['companies','Companies',I.building],['departments','Departments',I.layers]]},
+  {group:'Structure', items:[['companies','Companies',I.building],['departments','Departments',I.layers],['hired','Hired Employees',I.check]]},
   {group:'System', items:[['settings','Data & Settings',I.settings]]},
 ];
-const TITLES = {overview:'Overview',monthly:'Monthly Cost',vacancies:'Vacancies',employees:'Employees / Hires',companies:'Companies',departments:'Departments',settings:'Data & Settings'};
+const TITLES = {overview:'Overview',monthly:'Monthly Cost',vacancies:'Vacancies',employees:'Employees / Hires',companies:'Companies',departments:'Departments',hired:'Hired Employees',settings:'Data & Settings'};
 function buildNav(){
   const nav=$('#nav'); nav.innerHTML='';
   NAV.forEach(g=>{
@@ -627,6 +632,7 @@ function render(){
     case 'employees': renderEmployees(c); break;
     case 'companies': renderCompanies(c); break;
     case 'departments': renderDepartments(c); break;
+    case 'hired': renderHired(c); break;
     case 'settings': renderSettings(c); break;
   }
 }
@@ -659,7 +665,7 @@ function yearBuckets(recs, Y){
   let one=0, rec=0, ann=0, two=0; const heads={};
   recs.forEach(r=>{
     if(!isCostEligible(r)) return;
-    const d=parseDate(r.hiringDate); if(!d) return;
+    const d=parseDate(effDate(r)); if(!d) return;
     const q=Number(r.qty)||1; const c=r.costs||{}; const p=costPrimitives(r);
     const addHeads=(obj)=>{ for(const[kk,v] of Object.entries(obj||{})) heads[kk]=(heads[kk]||0)+(Number(v)||0)*q; };
     for(let m=1;m<=12;m++){
@@ -687,7 +693,7 @@ function costHeadsForPeriod(recs, f){
   const Y=y||REF_YEAR, M=m;
   recs.forEach(r=>{
     if(!isCostEligible(r)) return;
-    const d=parseDate(r.hiringDate); if(!d) return;
+    const d=parseDate(effDate(r)); if(!d) return;
     const k=(Y-d.y)*12+(M-d.m); if(k<0) return;
     const q=Number(r.qty)||1; const c=r.costs||{};
     addObj(c.monthlyRecurring,q,1); addObj(c.monthly,q,1);
@@ -1114,9 +1120,12 @@ function coSelect(label,key,options,fmtFn){
 function selectCompany(co){ state.selectedCompany=co; render(); setTimeout(()=>{ const m=$('#companyDetail'); if(m&&m.scrollIntoView) m.scrollIntoView({behavior:'smooth',block:'start'}); },80); }
 function renderCompanyDetail(co){
   const mount=$('#companyDetail'); if(!mount) return;
-  const recs=coFiltered().filter(v=>v.company===co); const elig=recs.filter(isCostEligible);
+  companyDashboard(mount, co, coFiltered().filter(v=>v.company===co), periodInfo(state.coFilters));
+}
+/* Reusable company dashboard: KPIs, position/cost-heads/hiring charts and vacancy list. */
+function companyDashboard(mount, co, recs, pi){
+  const elig=recs.filter(isCostEligible);
   if(!recs.length){ mount.innerHTML=''; mount.appendChild(emptyState(I.building,escapeHtml(co),'No records for this company under the current filters.')); return; }
-  const pi=periodInfo(state.coFilters);
   const monthly=elig.reduce((s,r)=>s+costPrimitives(r).monthly,0);
   const period=elig.reduce((s,r)=>s+(pi? pi.fn(r) : calculateAnnualCost(r,REF_YEAR)),0);
   const two=elig.reduce((s,r)=>s+calculateTwoYearCost(r),0);
@@ -1149,8 +1158,8 @@ function renderCompanyDetail(co){
 
   const tblCard=el('div','card'); tblCard.style.marginTop='16px';
   tblCard.appendChild(cardHeader('Vacancies at '+escapeHtml(co),recs.length+' records'));
-  let html='<div class="table-scroll"><table class="tbl"><thead><tr><th>ID</th><th>Position</th><th>Dept</th><th>Status</th><th>Hire date</th><th class="r">Monthly</th><th class="r">2-year</th></tr></thead><tbody>';
-  recs.forEach(r=>html+='<tr class="clickable" data-id="'+r.id+'"><td class="mono" style="color:var(--accent)">'+r.id+'</td><td class="pos-name">'+escapeHtml(r.position)+'</td><td>'+escapeHtml(r.department)+'</td><td><span class="badge-status '+statusClass(r.status)+'">'+escapeHtml(r.status)+'</span></td><td class="mono">'+fmtDate(r.hiringDate)+'</td><td class="r mono">'+fmt(calculateRecurringMonthlyCosts(r))+'</td><td class="r mono">'+fmt(calculateTwoYearCost(r))+'</td></tr>');
+  let html='<div class="table-scroll"><table class="tbl"><thead><tr><th>ID</th><th>Position</th><th>Dept</th><th>Status</th><th>Cost start</th><th class="r">Monthly</th><th class="r">2-year</th></tr></thead><tbody>';
+  recs.forEach(r=>html+='<tr class="clickable" data-id="'+r.id+'"><td class="mono" style="color:var(--accent)">'+r.id+'</td><td class="pos-name">'+escapeHtml(r.position)+'</td><td>'+escapeHtml(r.department)+'</td><td><span class="badge-status '+statusClass(r.status)+'">'+escapeHtml(r.status)+'</span></td><td class="mono">'+fmtDate(effDate(r))+'</td><td class="r mono">'+fmt(calculateRecurringMonthlyCosts(r))+'</td><td class="r mono">'+fmt(calculateTwoYearCost(r))+'</td></tr>');
   html+='</tbody></table></div>';
   const b=el('div');b.innerHTML=html;tblCard.appendChild(b);
   b.querySelectorAll('tr.clickable').forEach(tr=>tr.onclick=()=>openDetail(tr.dataset.id));
@@ -1165,11 +1174,11 @@ function renderCompanyDetail(co){
     makeChart('coPosCost','bar',{labels:pc.map(x=>x[0]),datasets:[{data:pc.map(x=>x[1]),backgroundColor:pc.map((_,i)=>CHART_COLORS[i%CHART_COLORS.length]),borderRadius:4,maxBarThickness:20}]},withDL(barMoneyOptsH(),DL_BAR));
     makeChart('coPosCount','bar',{labels:pn.map(x=>x[0]),datasets:[{data:pn.map(x=>x[1]),backgroundColor:'#3a4a72',borderRadius:4,maxBarThickness:20}]},withDL(barCountOptsH(),DL_BAR_COUNT));
     // cost by cost heads (period-aware)
-    const hd=Object.entries(costHeadsForPeriod(elig, state.coFilters)).filter(x=>x[1]>0).sort((a,b)=>b[1]-a[1]);
+    const hd=Object.entries(costHeadsForPeriod(elig, pi? state.coFilters : {})).filter(x=>x[1]>0).sort((a,b)=>b[1]-a[1]);
     makeChart('coHeads','bar',{labels:hd.map(x=>x[0].replace(/\s*\(.*?\)/,'')),datasets:[{data:hd.map(x=>x[1]),backgroundColor:hd.map((_,i)=>CHART_COLORS[i%CHART_COLORS.length]),borderRadius:5,maxBarThickness:26}]},withDL(barMoneyOptsH(),DL_BAR));
     // hiring by month
     const byMonth={};
-    recs.forEach(r=>{ const d=parseDate(r.hiringDate); if(!d) return; const k=d.y*100+d.m; byMonth[k]=(byMonth[k]||0)+(Number(r.qty)||1); });
+    recs.forEach(r=>{ const d=parseDate(effDate(r)); if(!d) return; const k=d.y*100+d.m; byMonth[k]=(byMonth[k]||0)+(Number(r.qty)||1); });
     const mk=Object.keys(byMonth).map(Number).sort();
     makeChart('coHireMonth','bar',{labels:mk.map(k=>monthLabel(Math.floor(k/100),k%100)),datasets:[{data:mk.map(k=>byMonth[k]),backgroundColor:'#1e9e6a',borderRadius:5,maxBarThickness:44}]},withDL(countOpts(),DL_BAR_COUNT));
     // forecast
@@ -1264,6 +1273,110 @@ function renderDeptDetail(de){
 }
 
 /* ============================================================================
+   HIRED EMPLOYEES  (everything anchored on the actual hired date)
+   ========================================================================== */
+function renderHired(c){
+  c.innerHTML='';
+  const hired = state.vacancies.filter(v=>v.status==='Hired');
+  if(!hired.length){
+    c.appendChild(emptyState(I.check,'No hired employees yet',
+      'Mark a vacancy as "Hired" (with its mandatory hired date) in the Vacancies tab and it will appear here. All costs on this page start from the hired date.'));
+    return;
+  }
+  // ---- KPIs: 2-year, this year, this month, next month, monthly commitment ----
+  const two = hired.reduce((s,r)=>s+calculateTwoYearCost(r),0);
+  const yearC = hired.reduce((s,r)=>s+calculateAnnualCost(r,REF_YEAR),0);
+  const curM = hired.reduce((s,r)=>s+calculateMonthlyCost(r,REF_YEAR,REF_MONTH),0);
+  const nm = REF_MONTH===12?{y:REF_YEAR+1,m:1}:{y:REF_YEAR,m:REF_MONTH+1};
+  const nextM = hired.reduce((s,r)=>s+calculateMonthlyCost(r,nm.y,nm.m),0);
+  const commit = hired.reduce((s,r)=>s+costPrimitives(r).monthly,0);
+  const k=el('div','kpi-grid');
+  k.appendChild(kpiCard('Hired Employees', hired.reduce((s,r)=>s+(Number(r.qty)||1),0), null,'ic-green',I.check, hired.length+' records'));
+  k.appendChild(kpiCard('Total 2-Year Cost', shortAed(two), true,'ic-navy',I.money,'from hired date'));
+  k.appendChild(kpiCard('This Year', shortAed(yearC), true,'ic-blue',I.chart, REF_YEAR+' total'));
+  k.appendChild(kpiCard('This Month', shortAed(curM), true,'ic-teal',I.calendar, monthLabel(REF_YEAR,REF_MONTH)));
+  k.appendChild(kpiCard('Next Month', shortAed(nextM), true,'ic-amber',I.trend, monthLabel(nm.y,nm.m)));
+  k.appendChild(kpiCard('Monthly Commitment', shortAed(commit), true,'ic-green',I.repeat,'recurring / month'));
+  c.appendChild(k);
+
+  // ---- Full list of hired employees ----
+  c.appendChild(el('div','section-title', I.users+' All hired employees'));
+  const listCard=el('div','card');
+  listCard.appendChild(cardHeader('Hired employees','costs run from each employee\'s hired date · click a row for the full audit'));
+  let html='<div class="table-scroll"><table class="tbl"><thead><tr><th>ID</th><th>Employee</th><th>Position</th><th>Company</th><th>Dept</th><th>Hired date</th><th class="r">Monthly</th><th class="r">'+REF_YEAR+' cost</th><th class="r">2-year cost</th></tr></thead><tbody>';
+  let t={mo:0,yr:0,ty:0};
+  hired.forEach(r=>{
+    const mo=calculateRecurringMonthlyCosts(r), yr=calculateAnnualCost(r,REF_YEAR), ty=calculateTwoYearCost(r);
+    t.mo+=mo;t.yr+=yr;t.ty+=ty;
+    const name=r.employeeName? escapeHtml(r.employeeName):'<span class="muted">— unnamed —</span>';
+    html+='<tr class="clickable" data-id="'+r.id+'"><td class="mono" style="color:var(--accent)">'+r.id+'</td><td class="pos-name">'+name+'</td><td>'+escapeHtml(r.position)+'</td><td>'+escapeHtml(r.company)+'</td><td>'+escapeHtml(r.department)+'</td><td class="mono">'+fmtDate(effDate(r))+'</td><td class="r mono">'+fmt(mo)+'</td><td class="r mono">'+fmt(yr)+'</td><td class="r mono"><b>'+fmt(ty)+'</b></td></tr>';
+  });
+  html+='</tbody><tfoot><tr class="tbl-total"><td colspan="6">Total — '+hired.length+' hired</td><td class="r">'+fmt(t.mo)+'</td><td class="r">'+fmt(t.yr)+'</td><td class="r">'+fmt(t.ty)+'</td></tr></tfoot></table></div>';
+  const lb=el('div'); lb.innerHTML=html; listCard.appendChild(lb);
+  lb.querySelectorAll('tr.clickable').forEach(tr=>tr.onclick=()=>openDetail(tr.dataset.id));
+  c.appendChild(listCard);
+
+  // ---- Charts: monthly employment cost (all years / per year) + cost heads ----
+  const chRow=el('div','grid two-col'); chRow.style.marginTop='16px';
+  const ySel=el('select');
+  ySel.style.cssText='padding:5px 9px;border:1px solid var(--border-strong);border-radius:7px;font-size:12.5px;background:#fff';
+  ['',...years()].forEach(y=>{ const o=new Option(y===''?'All years':String(y), y); if(String(state.hiredYear)===String(y)) o.selected=true; ySel.add(o); });
+  ySel.onchange=e=>{ state.hiredYear=e.target.value; render(); };
+  chRow.appendChild(chartCard('Monthly Employment Cost — hired','hiMonthly', state.hiredYear? 'per month, '+state.hiredYear:'total per year', ySel));
+  chRow.appendChild(chartCard('Cost by Cost Heads — hired','hiHeads','24-month total per line item'));
+  c.appendChild(chRow);
+
+  // ---- Company comparison chart + matrix ----
+  const cos=Array.from(new Set(hired.map(v=>v.company).filter(Boolean))).sort();
+  const rows=cos.map(co=>{
+    const recs=hired.filter(v=>v.company===co);
+    const heads=recs.reduce((s,r)=>s+(Number(r.qty)||1),0);
+    const monthly=recs.reduce((s,r)=>s+costPrimitives(r).monthly,0);
+    const annual=recs.reduce((s,r)=>s+calculateAnnualCost(r,REF_YEAR),0);
+    const twoC=recs.reduce((s,r)=>s+calculateTwoYearCost(r),0);
+    return {co,heads,recsN:recs.length,monthly,annual,two:twoC,avg:recs.length?twoC/recs.length:0};
+  }).sort((a,b)=>b.two-a.two);
+
+  const cmp=el('div','grid'); cmp.style.marginTop='16px';
+  cmp.appendChild(chartCard('Company cost comparison — hired','hiCompare','2-year cost from hired date, per company'));
+  c.appendChild(cmp);
+
+  const mxCard=el('div','card'); mxCard.style.marginTop='16px';
+  mxCard.appendChild(cardHeader('Hired Companies Matrix','click a company row for its full dashboard (all costs from hired date)'));
+  let mx='<div class="table-scroll"><table class="tbl"><thead><tr><th>Company</th><th class="r">Hired heads</th><th class="r">Monthly cost</th><th class="r">Annual cost</th><th class="r">2-year cost</th><th class="r">Avg / hire</th></tr></thead><tbody>';
+  rows.forEach(r=>{ const sel=state.selectedHiredCompany===r.co; mx+='<tr class="clickable'+(sel?' row-selected':'')+'" data-co="'+escapeHtml(r.co)+'"><td class="pos-name">'+escapeHtml(r.co)+'</td><td class="r mono">'+r.heads+'</td><td class="r mono">'+fmt(r.monthly)+'</td><td class="r mono">'+fmt(r.annual)+'</td><td class="r mono"><b>'+fmt(r.two)+'</b></td><td class="r mono">'+fmt(r.avg)+'</td></tr>'; });
+  const gt=rows.reduce((a,r)=>({heads:a.heads+r.heads,monthly:a.monthly+r.monthly,annual:a.annual+r.annual,two:a.two+r.two}),{heads:0,monthly:0,annual:0,two:0});
+  mx+='</tbody><tfoot><tr class="tbl-total"><td>Total</td><td class="r">'+gt.heads+'</td><td class="r">'+fmt(gt.monthly)+'</td><td class="r">'+fmt(gt.annual)+'</td><td class="r">'+fmt(gt.two)+'</td><td class="r">—</td></tr></tfoot></table></div>';
+  const mb=el('div'); mb.innerHTML=mx; mxCard.appendChild(mb);
+  c.appendChild(mxCard);
+  mb.querySelectorAll('tr.clickable').forEach(tr=>tr.onclick=()=>{ state.selectedHiredCompany=tr.dataset.co; render(); setTimeout(()=>{ const m=$('#hiredCompanyDetail'); if(m&&m.scrollIntoView) m.scrollIntoView({behavior:'smooth',block:'start'}); },80); });
+
+  if(state.selectedHiredCompany && cos.includes(state.selectedHiredCompany)){
+    const mount=el('div'); mount.id='hiredCompanyDetail'; mount.style.marginTop='16px';
+    c.appendChild(mount);
+  }
+
+  requestAnimationFrame(()=>{
+    const hy=+state.hiredYear||0;
+    if(hy){
+      const m=MONTHS.map((_,i)=>hired.reduce((s,r)=>s+calculateMonthlyCost(r,hy,i+1),0));
+      makeChart('hiMonthly','bar',{labels:MONTHS,datasets:[{data:m,backgroundColor:'#1e9e6a',borderRadius:5,maxBarThickness:38}]},withDL(barMoneyOpts('Cost — '+hy),DL_BAR));
+    }else{
+      const ys=years();
+      const tot=ys.map(y=>hired.reduce((s,r)=>s+calculateAnnualCost(r,y),0));
+      makeChart('hiMonthly','bar',{labels:ys.map(String),datasets:[{data:tot,backgroundColor:'#1e9e6a',borderRadius:5,maxBarThickness:70}]},withDL(barMoneyOpts('Cost by year'),DL_BAR));
+    }
+    const hd=Object.entries(costHeadsForPeriod(hired, {})).filter(x=>x[1]>0).sort((a,b)=>b[1]-a[1]);
+    makeChart('hiHeads','bar',{labels:hd.map(x=>x[0].replace(/\s*\(.*?\)/,'')),datasets:[{data:hd.map(x=>x[1]),backgroundColor:hd.map((_,i)=>CHART_COLORS[i%CHART_COLORS.length]),borderRadius:4,maxBarThickness:20}]},withDL(barMoneyOptsH(),DL_BAR));
+    makeChart('hiCompare','bar',{labels:rows.map(r=>r.co),datasets:[{data:rows.map(r=>r.two),backgroundColor:rows.map((_,i)=>CHART_COLORS[i%CHART_COLORS.length]),borderRadius:5,maxBarThickness:40}]},withDL(barMoneyOpts(),DL_BAR));
+    if(state.selectedHiredCompany){
+      const mount=$('#hiredCompanyDetail');
+      if(mount) companyDashboard(mount, state.selectedHiredCompany, hired.filter(v=>v.company===state.selectedHiredCompany), null);
+    }
+  });
+}
+
+/* ============================================================================
    SETTINGS / DATA
    ========================================================================== */
 function renderSettings(c){
@@ -1339,7 +1452,7 @@ function costFieldKeys(){
 }
 function blankRecord(){
   const keys=costFieldKeys(); const mk=arr=>{const o={};arr.forEach(k=>o[k]=0);return o;};
-  return {id:null,qty:1,employeeName:null,position:'',company:'',department:'',collarType:'',employmentType:'',localOverseas:'',status:'Planned',hiringDate:'',remarks:'',
+  return {id:null,qty:1,employeeName:null,position:'',company:'',department:'',collarType:'',employmentType:'',localOverseas:'',status:'Planned',hiringDate:'',hiredDate:'',remarks:'',
     costs:{oneTime:mk(keys.oneTime),monthlyRecurring:mk(keys.monthlyRecurring),twoYear:mk(keys.twoYear),annual:mk(keys.annual),monthly:mk(keys.monthly)}};
 }
 function openForm(id){
@@ -1356,6 +1469,7 @@ function openForm(id){
     fgSelect('Department','department',rec.department,['',...uniq('department')],true,true),
     fgText('Job title / position','position',rec.position,true),
     fgSelect('Status','status',rec.status,STATUSES,true),
+    fgDate('Hired date','hiredDate',rec.hiredDate||'',false),
     fgDate('Hiring date','hiringDate',rec.hiringDate,true),
     fgNumber('Quantity','qty',rec.qty,1),
     fgSelect('Type','collarType',rec.collarType,['','Blue Collar','White Collar'],false),
@@ -1382,6 +1496,16 @@ function openForm(id){
   $('#drawerFoot').appendChild(cancel); $('#drawerFoot').appendChild(save);
 
   body.querySelectorAll('input,select').forEach(inp=>inp.addEventListener('input',updateCalcPreview));
+  // Hired date only applies (and is mandatory) when status = Hired
+  const statusSel=body.querySelector('[data-field-key="status"]');
+  const hiredInp=body.querySelector('[data-field-key="hiredDate"]');
+  if(statusSel && hiredInp){
+    const hiredFg=hiredInp.closest('.fg');
+    hiredFg.querySelector('label').innerHTML='Hired date <span class="req">*</span> <span class="muted" style="font-weight:400">(cost starts here)</span>';
+    const syncHired=()=>{ hiredFg.style.display = statusSel.value==='Hired'? '' : 'none'; };
+    statusSel.addEventListener('change',()=>{ syncHired(); updateCalcPreview(); });
+    syncHired();
+  }
   updateCalcPreview();
   openDrawer();
 }
@@ -1437,6 +1561,8 @@ function saveForm(){
   check('department', !!rec.department, 'Select a department');
   check('position', !!String(rec.position).trim(), 'Enter a position');
   check('hiringDate', !!parseDate(rec.hiringDate), 'Enter a valid hiring date');
+  check('hiredDate', rec.status!=='Hired' || !!parseDate(rec.hiredDate), 'Hired date is mandatory when status is Hired');
+  if(rec.status!=='Hired') rec.hiredDate=null;
   // negative cost guard
   let neg=false; body.querySelectorAll('[data-bucket]').forEach(i=>{ if(Number(i.value)<0){neg=true;i.closest('.fg').classList.add('invalid');} });
   if(neg){ toast('Costs cannot be negative','bad'); ok=false; }
@@ -1488,11 +1614,12 @@ function openDetail(id){
   $('#drawerTitle').textContent=rec.position||'Vacancy';
   $('#drawerSub').textContent=rec.id+' · '+rec.company;
   const p=costPrimitives(rec); const two=calculateTwoYearCost(rec);
-  const d=parseDate(rec.hiringDate);
+  const d=parseDate(effDate(rec));
   let html='<div class="detail-grid">'+
     di('Company',rec.company)+di('Department',rec.department)+
     di('Status','<span class="badge-status '+statusClass(rec.status)+'">'+escapeHtml(rec.status)+'</span>')+
     di('Hiring date',fmtDate(rec.hiringDate))+
+    (rec.status==='Hired'&&rec.hiredDate? di('Hired date (cost start)',fmtDate(rec.hiredDate)):'')+
     di('Type',rec.collarType||'—')+di('Employment',rec.employmentType||'—')+
     di('Quantity',rec.qty)+di('2-year cost','<span class="mono">'+aedTxt(two)+'</span>')+
     '</div>';
@@ -1551,7 +1678,7 @@ function exportExcel(){
     const o={
       'ID':r.id,'Qty':r.qty,'Employee Name':r.employeeName||'','Position':r.position,'Company':r.company,
       'Department':r.department,'Type':r.collarType||'','Employment':r.employmentType||'',
-      'Local/Overseas':r.localOverseas||'','Status':r.status,'Hiring Date':r.hiringDate||'','Remarks':r.remarks||''
+      'Local/Overseas':r.localOverseas||'','Status':r.status,'Hiring Date':r.hiringDate||'','Hired Date':r.hiredDate||'','Remarks':r.remarks||''
     };
     const put=(bucket,tag)=>{ for(const [k,v] of Object.entries(r.costs[bucket]||{})) o[k+' ['+tag+']']=Number(v)||0; };
     put('oneTime','One-time'); put('monthlyRecurring','Monthly'); put('monthly','Monthly');

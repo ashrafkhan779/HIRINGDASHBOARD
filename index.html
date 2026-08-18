@@ -624,7 +624,6 @@ function buildTopActions(){
   file.onchange=e=>{ const f=e.target.files[0]; if(f) importExcelFile(f); file.value=''; };
   bar.appendChild(mk(I.upload,'Upload Excel','Upload a filled Excel file — replaces and refreshes all dashboard data',()=>file.click(),true));
   bar.appendChild(file);
-  bar.appendChild(mk(I.refresh,'Reset','Discard local edits and reload the original data.json',()=>confirmReset()));
 }
 
 /* ------------------------------------------------------------------ nav */

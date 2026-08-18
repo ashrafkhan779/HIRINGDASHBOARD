@@ -411,7 +411,7 @@ const state = {
   filters: {year:'', month:'', company:'', department:'', status:'', type:'', vtype:'', bcat:''},
   coFilters: {department:'', status:'', year:'', month:'', type:'', vtype:'', bcat:''},
   deFilters: {company:'', status:'', year:'', month:'', type:'', vtype:'', bcat:''},
-  vacFilters: {company:'', department:'', position:'', status:'', month:'', year:'', search:'', type:'', vtype:'', bcat:''},
+  vacFilters: {company:'', department:'', position:'', status:'', month:'', year:'', search:'', type:'', vtype:'', bcat:'', hmgr:'', rmgr:''},
   vacSort: {key:'id', dir:1},
   vacPage: 1,
   vacPerPage: 12,
@@ -943,9 +943,11 @@ function renderVacancies(c){
   fb.appendChild(vacSelect('Type','type',['',...uniq('collarType')]));
   fb.appendChild(vacSelect('Vacancy Type','vtype',['',...VAC_TYPES]));
   fb.appendChild(vacSelect('Category','bcat',['',...BIZ_CATS]));
+  fb.appendChild(vacSelect('Hiring Mgr','hmgr',['',...uniq('hiringManager')]));
+  fb.appendChild(vacSelect('Reporting Mgr','rmgr',['',...uniq('reportingManager')]));
   const vreset=el('button','btn ghost',I.refresh+'Reset filters');
   vreset.style.marginLeft='auto';
-  vreset.onclick=()=>{ state.vacFilters={company:'',department:'',position:'',status:'',month:'',year:'',search:'',type:'',vtype:'',bcat:''}; state.vacPage=1; render(); };
+  vreset.onclick=()=>{ state.vacFilters={company:'',department:'',position:'',status:'',month:'',year:'',search:'',type:'',vtype:'',bcat:'',hmgr:'',rmgr:''}; state.vacPage=1; render(); };
   fb.appendChild(vreset);
   const xls=el('button','btn',I.download+'Excel');
   xls.title='Download all vacancies with full cost data (.xlsx)';
@@ -964,6 +966,8 @@ function renderVacancies(c){
     if(f.type&&v.collarType!==f.type) return false;
     if(f.vtype&&v.vacancyType!==f.vtype) return false;
     if(f.bcat&&v.businessCategory!==f.bcat) return false;
+    if(f.hmgr&&v.hiringManager!==f.hmgr) return false;
+    if(f.rmgr&&v.reportingManager!==f.rmgr) return false;
     const d=parseDate(v.hiringDate);
     if(f.year&&(!d||d.y!==+f.year)) return false;
     if(f.month&&(!d||d.m!==+f.month)) return false;

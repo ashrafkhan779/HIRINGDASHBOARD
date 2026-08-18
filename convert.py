@@ -172,6 +172,8 @@ def convert(input_path, output_path):
             continue
 
         company = (cell(ws, row, COL["company"]) or "").strip() if isinstance(cell(ws, row, COL["company"]), str) else cell(ws, row, COL["company"])
+        if isinstance(company, str):
+            company = COMPANY_RENAMES.get(company, company)
         department = cell(ws, row, COL["department"])
         position = cell(ws, row, COL["position"])
         hiring_iso = to_iso_date(cell(ws, row, COL["date"]))

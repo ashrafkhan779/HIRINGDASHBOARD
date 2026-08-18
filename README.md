@@ -101,6 +101,28 @@ date, possible duplicates).
 
 ---
 
+## No-code data workflow (recommended)
+
+You don't need Python for day-to-day updates. The dashboard's **top bar** has
+three data buttons:
+
+- **data.json** — downloads the complete current dataset (including your
+  in-app edits). Replace `data.json` in your GitHub repository with this file
+  and commit — the live site updates.
+- **Excel** — downloads an Excel **template** with all current data, one row
+  per vacancy, plus an Instructions sheet. Cost columns are tagged by
+  frequency (`[One-time]`, `[Monthly]`, `[Annual]`, `[2-Year]`).
+- **Upload Excel** — pick a filled template (or the original *New Joiners
+  Cost* workbook) and every tab, KPI and chart refreshes from it instantly.
+  Then use **data.json** to download and commit the result.
+
+Notes for the template: keep the header row unchanged; dates as `YYYY-MM-DD`
+or Excel date cells; leave `ID` empty for new rows (auto-assigned); when
+`Status` is `Hired`, fill **Actual Start Date** — all costs start from it;
+computed columns are ignored on upload and recalculated.
+
+---
+
 ## Running locally
 
 Because the app fetches `data.json`, opening `index.html` directly from disk
@@ -131,6 +153,16 @@ http://localhost:8000
 `data.json` loads automatically over HTTPS on Pages.
 
 ---
+
+## Vacancy fields
+
+Each vacancy carries: company, department, job title/position, **hiring
+manager** and **reporting manager** (mandatory), **vacancy type**
+(Backfill / New Role), **business category** (Business Development /
+Service/Operations & Admin), status, **request to hire** date, and — once
+status is *Hired* — a mandatory **actual start date**, which is where all
+costs begin. The Vacancies table shows **Days** = actual start date minus
+request-to-hire date.
 
 ## Adding a vacancy
 

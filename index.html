@@ -281,6 +281,11 @@ body{background:
 .tbl.matrix .mono{font-size:10.5px;}
 .tbl.matrix thead th{position:sticky;top:0;background:var(--card,#fff);z-index:2;}
 .matrix-wrap{max-height:62vh;overflow:auto;border-radius:10px;}
+/* topbar data actions */
+.top-actions{display:flex;gap:8px;margin-left:auto;align-items:center}
+.top-actions .btn{padding:7px 11px;font-size:12px;white-space:nowrap}
+.top-actions .btn svg{width:14px;height:14px}
+@media(max-width:900px){.top-actions .btn span.lbl{display:none}}
 /* two-row KPI layout (7 per row) */
 .kpi-row{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:12px;}
 .kpi-row .kpi{padding:12px 13px;}
@@ -314,6 +319,7 @@ body{background:
         <input id="globalSearch" placeholder="Search vacancy, position, company…" autocomplete="off" />
         <div class="search-results" id="searchResults"></div>
       </div>
+      <div class="top-actions" id="topActions"></div>
     </header>
     <div class="content"><div id="pages"></div></div>
   </div>
@@ -400,10 +406,10 @@ const state = {
   vacancies: [],      // working set (original merged with local changes)
   dirty: false,
   route: 'overview',
-  filters: {year:'', month:'', company:'', department:'', status:''},
-  coFilters: {department:'', status:'', year:'', month:''},
-  deFilters: {company:'', status:'', year:'', month:''},
-  vacFilters: {company:'', department:'', position:'', status:'', month:'', year:'', search:''},
+  filters: {year:'', month:'', company:'', department:'', status:'', type:''},
+  coFilters: {department:'', status:'', year:'', month:'', type:''},
+  deFilters: {company:'', status:'', year:'', month:'', type:''},
+  vacFilters: {company:'', department:'', position:'', status:'', month:'', year:'', search:'', type:''},
   vacSort: {key:'id', dir:1},
   vacPage: 1,
   vacPerPage: 12,
@@ -411,6 +417,7 @@ const state = {
   selectedCompany: null,
   selectedHiredCompany: null,
   hiredYear: '',
+  hiredType: '',
   charts: {},
   searchIdx: -1,
 };
@@ -437,6 +444,7 @@ function shortAed(n){
 function parseDate(iso){ if(!iso) return null; const p=String(iso).slice(0,10).split('-'); if(p.length<2) return null; const y=+p[0], m=+p[1]; if(!y||!m) return null; return {y, m, d:+p[2]||1}; }
 function fmtDate(iso){ const d=parseDate(iso); if(!d) return '—'; return String(d.d).padStart(2,'0')+' '+MONTHS[d.m-1]+' '+d.y; }
 function monthLabel(y,m){ return MONTHS[m-1]+' '+y; }
+function daysBetween(a,b){ const da=parseDate(a), db=parseDate(b); if(!da||!db) return null; return Math.round((Date.UTC(db.y,db.m-1,db.d)-Date.UTC(da.y,da.m-1,da.d))/86400000); }
 
 /* ============================================================================
    COST CALCULATION ENGINE   (pure functions; no DOM)
@@ -545,6 +553,7 @@ async function boot(){
   buildNav();
   $('#searchIcon').innerHTML = I.search;
   $('#hamburger').innerHTML = I.menu;
+  buildTopActions();
   $('#drawerClose').innerHTML = I.x;
   wireGlobalEvents();
   try{
@@ -578,6 +587,11 @@ function normalize(v){
   v.qty = Number(v.qty)||1;
   v.status = v.status || 'Planned';
   v.hiredDate = v.hiredDate || null;
+  v.hiringManager = v.hiringManager || '';
+  v.reportingManager = v.reportingManager || '';
+  v.vacancyType = v.vacancyType || '';
+  v.businessCategory = v.businessCategory || '';
+  if(v.company==='ME - KSA') v.company='MGE - KSA';
   v.costs = v.costs || {oneTime:{},monthlyRecurring:{},twoYear:{},annual:{},monthly:{}};
   ['oneTime','monthlyRecurring','twoYear','annual','monthly'].forEach(k=>{ v.costs[k]=v.costs[k]||{}; });
   return v;
@@ -592,6 +606,18 @@ function showLoadError(err){
     '<p style="margin-top:10px">then open <code>http://localhost:8000</code>. '+
     'On GitHub Pages this works automatically.</p>'+
     '<p style="margin-top:10px;color:var(--text-3)">Technical detail: '+escapeHtml(err.message)+'</p></div>';
+}
+
+function buildTopActions(){
+  const bar=$('#topActions'); if(!bar) return;
+  bar.innerHTML='';
+  const mk=(icon,label,title,fn,primary)=>{ const b=el('button','btn'+(primary?' primary':''),icon+'<span class="lbl">'+label+'</span>'); b.title=title; b.onclick=fn; return b; };
+  bar.appendChild(mk(I.download,'data.json','Download the full dashboard dataset as data.json — commit it to your GitHub repo to update the live site',()=>exportJSON()));
+  bar.appendChild(mk(I.download,'Excel','Download all dashboard data as an Excel template — fill it and upload it back',()=>exportExcel(true)));
+  const file=el('input'); file.type='file'; file.accept='.xlsx,.xls'; file.style.display='none';
+  file.onchange=e=>{ const f=e.target.files[0]; if(f) importExcelFile(f); file.value=''; };
+  bar.appendChild(mk(I.upload,'Upload Excel','Upload a filled Excel file — replaces and refreshes all dashboard data',()=>file.click(),true));
+  bar.appendChild(file);
 }
 
 /* ------------------------------------------------------------------ nav */
@@ -645,6 +671,7 @@ function filteredForOverview(){
     if(f.company && v.company!==f.company) return false;
     if(f.department && v.department!==f.department) return false;
     if(f.status && v.status!==f.status) return false;
+    if(f.type && v.collarType!==f.type) return false;
     const d=parseDate(v.hiringDate);
     if(f.month && (!d || d.m!==+f.month)) return false;
     // NOTE: Year is a cost-view selector (2026/2027/2028), not a hiring-date filter —
@@ -721,9 +748,10 @@ function renderOverview(c){
   fb.appendChild(selectFilt('Company','company',['',...uniq('company')]));
   fb.appendChild(selectFilt('Department','department',['',...uniq('department')]));
   fb.appendChild(selectFilt('Status','status',['',...STATUSES]));
+  fb.appendChild(selectFilt('Type','type',['',...uniq('collarType')]));
   const reset=el('button','btn ghost',I.refresh+'Reset filters');
   reset.style.marginLeft='auto';
-  reset.onclick=()=>{ state.filters={year:'',month:'',company:'',department:'',status:''}; render(); };
+  reset.onclick=()=>{ state.filters={year:'',month:'',company:'',department:'',status:'',type:''}; render(); };
   fb.appendChild(reset);
   c.appendChild(fb);
 
@@ -843,9 +871,10 @@ function renderMonthly(c){
   fb.appendChild(ysel);
   fb.appendChild(selectFilt('Company','company',['',...uniq('company')]));
   fb.appendChild(selectFilt('Department','department',['',...uniq('department')]));
+  fb.appendChild(selectFilt('Type','type',['',...uniq('collarType')]));
   const reset=el('button','btn ghost',I.refresh+'Reset filters');
   reset.style.marginLeft='auto';
-  reset.onclick=()=>{ state.filters.company=''; state.filters.department=''; render(); };
+  reset.onclick=()=>{ state.filters.company=''; state.filters.department=''; state.filters.type=''; render(); };
   fb.appendChild(reset);
   c.appendChild(fb);
 
@@ -853,13 +882,14 @@ function renderMonthly(c){
   const recs = state.vacancies.filter(v=>{
     if(state.filters.company && v.company!==state.filters.company) return false;
     if(state.filters.department && v.department!==state.filters.department) return false;
+    if(state.filters.type && v.collarType!==state.filters.type) return false;
     return true;
   });
   const card=el('div','card');
   card.appendChild(cardHeader('Monthly Cost Matrix — '+yr,'auto-calculated by cost frequency · click a row to audit'));
   if(!recs.length){ card.appendChild(emptyState(I.calendar,'No vacancies','No records match the current filters.')); c.appendChild(card); return; }
 
-  let html='<div class="table-scroll matrix-wrap"><table class="tbl matrix"><thead><tr><th>Vacancy</th><th>Company</th><th>Dept</th><th>Hire date</th>';
+  let html='<div class="table-scroll matrix-wrap"><table class="tbl matrix"><thead><tr><th>Vacancy</th><th>Company</th><th>Dept</th><th>Request to hire</th>';
   MONTHS.forEach(m=>html+='<th class="r">'+m+'</th>'); html+='<th class="r">Annual total</th></tr></thead><tbody>';
   const colTotals=new Array(12).fill(0); let grand=0;
   recs.forEach(r=>{
@@ -897,9 +927,10 @@ function renderVacancies(c){
   fb.appendChild(vacSelect('Status','status',['',...STATUSES]));
   fb.appendChild(vacSelect('Year','year',['',...years().map(String)]));
   fb.appendChild(vacSelect('Month','month',['',...MONTHS.map((_,i)=>String(i+1))], v=>v===''?'All':MONTHS[v-1]));
+  fb.appendChild(vacSelect('Type','type',['',...uniq('collarType')]));
   const vreset=el('button','btn ghost',I.refresh+'Reset filters');
   vreset.style.marginLeft='auto';
-  vreset.onclick=()=>{ state.vacFilters={company:'',department:'',position:'',status:'',month:'',year:'',search:''}; state.vacPage=1; render(); };
+  vreset.onclick=()=>{ state.vacFilters={company:'',department:'',position:'',status:'',month:'',year:'',search:'',type:''}; state.vacPage=1; render(); };
   fb.appendChild(vreset);
   const xls=el('button','btn',I.download+'Excel');
   xls.title='Download all vacancies with full cost data (.xlsx)';
@@ -915,6 +946,7 @@ function renderVacancies(c){
     if(f.department&&v.department!==f.department) return false;
     if(f.position&&v.position!==f.position) return false;
     if(f.status&&v.status!==f.status) return false;
+    if(f.type&&v.collarType!==f.type) return false;
     const d=parseDate(v.hiringDate);
     if(f.year&&(!d||d.y!==+f.year)) return false;
     if(f.month&&(!d||d.m!==+f.month)) return false;
@@ -924,7 +956,8 @@ function renderVacancies(c){
   const {key,dir}=state.vacSort;
   recs.sort((a,b)=>{
     let av,bv;
-    if(key==='twoYear'){av=calculateTwoYearCost(a);bv=calculateTwoYearCost(b);}
+    if(key==='days'){av=daysBetween(a.hiringDate,a.hiredDate)??-1;bv=daysBetween(b.hiringDate,b.hiredDate)??-1;}
+    else if(key==='twoYear'){av=calculateTwoYearCost(a);bv=calculateTwoYearCost(b);}
     else if(key==='monthly'){av=calculateRecurringMonthlyCosts(a);bv=calculateRecurringMonthlyCosts(b);}
     else if(key==='hiringDate'){av=a.hiringDate||'';bv=b.hiringDate||'';}
     else {av=String(a[key]||'').toLowerCase();bv=String(b[key]||'').toLowerCase();}
@@ -940,7 +973,7 @@ function renderVacancies(c){
   if(state.vacPage>pages) state.vacPage=1;
   const start=(state.vacPage-1)*per; const slice=recs.slice(start,start+per);
 
-  const cols=[['id','ID'],['position','Position'],['company','Company'],['department','Dept'],['status','Status'],['hiringDate','Hire date'],['monthly','Monthly'],['twoYear','2-yr cost']];
+  const cols=[['id','ID'],['position','Position'],['company','Company'],['department','Dept'],['status','Status'],['hiringDate','Request to hire'],['days','Days'],['hiringManager','Hiring Mgr'],['reportingManager','Reporting Mgr'],['monthly','Monthly'],['twoYear','2-yr cost']];
   let html='<div class="table-scroll"><table class="tbl"><thead><tr>';
   cols.forEach(([k,label])=>{ const sorted=state.vacSort.key===k; const rcls=(k==='monthly'||k==='twoYear')?' r':''; html+='<th class="sortable'+rcls+(sorted?' sorted':'')+'" data-k="'+k+'">'+label+'<span class="arr">'+(sorted?(dir>0?'▲':'▼'):'↕')+'</span></th>'; });
   html+='<th class="r">Actions</th></tr></thead><tbody>';
@@ -950,6 +983,9 @@ function renderVacancies(c){
       '<td>'+escapeHtml(r.company)+'</td><td>'+escapeHtml(r.department)+'</td>'+
       '<td><span class="badge-status '+statusClass(r.status)+'">'+escapeHtml(r.status)+'</span></td>'+
       '<td class="mono">'+fmtDate(r.hiringDate)+'</td>'+
+      '<td class="r mono">'+(r.status==='Hired'&&r.hiredDate&&daysBetween(r.hiringDate,r.hiredDate)!=null? daysBetween(r.hiringDate,r.hiredDate):'—')+'</td>'+
+      '<td style="font-size:12px">'+escapeHtml(r.hiringManager||'—')+'</td>'+
+      '<td style="font-size:12px">'+escapeHtml(r.reportingManager||'—')+'</td>'+
       '<td class="r mono">'+fmt(calculateRecurringMonthlyCosts(r))+'</td>'+
       '<td class="r mono"><b>'+fmt(calculateTwoYearCost(r))+'</b></td>'+
       '<td class="r">'+actionsMenu(r.id)+'</td></tr>';
@@ -1012,9 +1048,10 @@ function renderEmployees(c){
   fb.appendChild(vacSelect('Department','department',['',...uniq('department')]));
   fb.appendChild(vacSelect('Position','position',['',...uniq('position')]));
   fb.appendChild(vacSelect('Status','status',['',...STATUSES]));
+  fb.appendChild(vacSelect('Type','type',['',...uniq('collarType')]));
   const ereset=el('button','btn ghost',I.refresh+'Reset filters');
   ereset.style.marginLeft='auto';
-  ereset.onclick=()=>{ state.vacFilters={company:'',department:'',position:'',status:'',month:'',year:'',search:''}; render(); };
+  ereset.onclick=()=>{ state.vacFilters={company:'',department:'',position:'',status:'',month:'',year:'',search:'',type:''}; render(); };
   fb.appendChild(ereset);
   c.appendChild(fb);
 
@@ -1023,12 +1060,13 @@ function renderEmployees(c){
     if(f.department&&v.department!==f.department) return false;
     if(f.position&&v.position!==f.position) return false;
     if(f.status&&v.status!==f.status) return false;
+    if(f.type&&v.collarType!==f.type) return false;
     return true;
   });
   const card=el('div','card');
   card.appendChild(cardHeader('Employees / Hires','one-time, monthly, annual and 2-year cost per position'));
   if(!recs.length){ card.appendChild(emptyState(I.users,'Nothing to show','No records match the current filters.')); c.appendChild(card); return; }
-  let html='<div class="table-scroll"><table class="tbl"><thead><tr><th>Employee / Vacancy</th><th>Company</th><th>Dept</th><th>Position</th><th>Hire date</th><th>Status</th><th class="r">One-time</th><th class="r">Monthly</th><th class="r">Annual</th><th class="r">2-year</th></tr></thead><tbody>';
+  let html='<div class="table-scroll"><table class="tbl"><thead><tr><th>Employee / Vacancy</th><th>Company</th><th>Dept</th><th>Position</th><th>Request to hire</th><th>Status</th><th class="r">One-time</th><th class="r">Monthly</th><th class="r">Annual</th><th class="r">2-year</th></tr></thead><tbody>';
   let t={ot:0,mo:0,an:0,ty:0};
   recs.forEach(r=>{
     const ot=calculateOneTimeCosts(r), mo=calculateRecurringMonthlyCosts(r), an=(costPrimitives(r).annual), ty=calculateTwoYearCost(r);
@@ -1050,6 +1088,7 @@ function coFiltered(){
   return state.vacancies.filter(v=>{
     if(f.department && v.department!==f.department) return false;
     if(f.status && v.status!==f.status) return false;
+    if(f.type && v.collarType!==f.type) return false;
     return true;
   });
 }
@@ -1075,9 +1114,10 @@ function renderCompanies(c){
   fb.appendChild(coSelect('Month','month',['',...MONTHS.map((_,i)=>String(i+1))], v=>v===''?'All months':MONTHS[v-1]));
   fb.appendChild(coSelect('Department','department',['',...uniq('department')]));
   fb.appendChild(coSelect('Status','status',['',...STATUSES]));
+  fb.appendChild(coSelect('Type','type',['',...uniq('collarType')]));
   const reset=el('button','btn ghost',I.refresh+'Reset filters');
   reset.style.marginLeft='auto';
-  reset.onclick=()=>{ state.coFilters={department:'',status:'',year:'',month:''}; render(); };
+  reset.onclick=()=>{ state.coFilters={department:'',status:'',year:'',month:'',type:''}; render(); };
   fb.appendChild(reset);
   c.appendChild(fb);
 
@@ -1195,6 +1235,7 @@ function deFiltered(){
   return state.vacancies.filter(v=>{
     if(f.company && v.company!==f.company) return false;
     if(f.status && v.status!==f.status) return false;
+    if(f.type && v.collarType!==f.type) return false;
     return true;
   });
 }
@@ -1213,9 +1254,10 @@ function renderDepartments(c){
   fb.appendChild(deSelect('Month','month',['',...MONTHS.map((_,i)=>String(i+1))], v=>v===''?'All months':MONTHS[v-1]));
   fb.appendChild(deSelect('Company','company',['',...uniq('company')]));
   fb.appendChild(deSelect('Status','status',['',...STATUSES]));
+  fb.appendChild(deSelect('Type','type',['',...uniq('collarType')]));
   const reset=el('button','btn ghost',I.refresh+'Reset filters');
   reset.style.marginLeft='auto';
-  reset.onclick=()=>{ state.deFilters={company:'',status:'',year:'',month:''}; render(); };
+  reset.onclick=()=>{ state.deFilters={company:'',status:'',year:'',month:'',type:''}; render(); };
   fb.appendChild(reset);
   c.appendChild(fb);
 
@@ -1277,7 +1319,18 @@ function renderDeptDetail(de){
    ========================================================================== */
 function renderHired(c){
   c.innerHTML='';
-  const hired = state.vacancies.filter(v=>v.status==='Hired');
+  const fb=el('div','filterbar');
+  const tSel=el('div','filt'); let th='<label>Type</label><select>';
+  ['',...uniq('collarType')].forEach(o=>th+='<option value="'+escapeHtml(o)+'"'+(String(state.hiredType)===String(o)?' selected':'')+'>'+(o===''?'All':escapeHtml(o))+'</option>');
+  tSel.innerHTML=th+'</select>';
+  tSel.querySelector('select').onchange=e=>{ state.hiredType=e.target.value; render(); };
+  fb.appendChild(tSel);
+  const hreset=el('button','btn ghost',I.refresh+'Reset filters');
+  hreset.style.marginLeft='auto';
+  hreset.onclick=()=>{ state.hiredType=''; state.hiredYear=''; render(); };
+  fb.appendChild(hreset);
+  c.appendChild(fb);
+  const hired = state.vacancies.filter(v=>v.status==='Hired' && (!state.hiredType || v.collarType===state.hiredType));
   if(!hired.length){
     c.appendChild(emptyState(I.check,'No hired employees yet',
       'Mark a vacancy as "Hired" (with its mandatory hired date) in the Vacancies tab and it will appear here. All costs on this page start from the hired date.'));
@@ -1303,7 +1356,7 @@ function renderHired(c){
   c.appendChild(el('div','section-title', I.users+' All hired employees'));
   const listCard=el('div','card');
   listCard.appendChild(cardHeader('Hired employees','costs run from each employee\'s hired date · click a row for the full audit'));
-  let html='<div class="table-scroll"><table class="tbl"><thead><tr><th>ID</th><th>Employee</th><th>Position</th><th>Company</th><th>Dept</th><th>Hired date</th><th class="r">Monthly</th><th class="r">'+REF_YEAR+' cost</th><th class="r">2-year cost</th></tr></thead><tbody>';
+  let html='<div class="table-scroll"><table class="tbl"><thead><tr><th>ID</th><th>Employee</th><th>Position</th><th>Company</th><th>Dept</th><th>Actual start date</th><th class="r">Monthly</th><th class="r">'+REF_YEAR+' cost</th><th class="r">2-year cost</th></tr></thead><tbody>';
   let t={mo:0,yr:0,ty:0};
   hired.forEach(r=>{
     const mo=calculateRecurringMonthlyCosts(r), yr=calculateAnnualCost(r,REF_YEAR), ty=calculateTwoYearCost(r);
@@ -1390,6 +1443,7 @@ function renderSettings(c){
   eb.style.display='flex'; eb.style.flexWrap='wrap'; eb.style.gap='10px';
   eb.appendChild(actBtn(I.download,'Export JSON',()=>exportJSON()));
   eb.appendChild(actBtn(I.download,'Export Excel (all data + costs)',()=>exportExcel()));
+  eb.appendChild(actBtn(I.download,'Excel template (fill & upload)',()=>exportExcel(true)));
   eb.appendChild(actBtn(I.download,'Export CSV (all)',()=>exportCSV('all')));
   eb.appendChild(actBtn(I.download,'Monthly cost CSV',()=>exportMonthlyCSV()));
   eb.appendChild(actBtn(I.download,'Backup (.json)',()=>exportJSON(true)));
@@ -1404,7 +1458,10 @@ function renderSettings(c){
   const file=el('input'); file.type='file'; file.accept='.json,application/json'; file.style.display='none';
   const impBtn=actBtn(I.upload,'Choose JSON file…',()=>file.click());
   file.onchange=e=>{ const f=e.target.files[0]; if(f) importJSON(f); file.value=''; };
-  ib.appendChild(impBtn); ib.appendChild(file);
+  const xfile=el('input'); xfile.type='file'; xfile.accept='.xlsx,.xls'; xfile.style.display='none';
+  const xBtn=actBtn(I.upload,'Upload Excel (replace all data)…',()=>xfile.click());
+  xfile.onchange=e=>{ const f=e.target.files[0]; if(f) importExcelFile(f); xfile.value=''; };
+  ib.appendChild(impBtn); ib.appendChild(file); ib.appendChild(xBtn); ib.appendChild(xfile);
   imp.appendChild(ib);
   grid.appendChild(imp);
   c.appendChild(grid);
@@ -1452,7 +1509,7 @@ function costFieldKeys(){
 }
 function blankRecord(){
   const keys=costFieldKeys(); const mk=arr=>{const o={};arr.forEach(k=>o[k]=0);return o;};
-  return {id:null,qty:1,employeeName:null,position:'',company:'',department:'',collarType:'',employmentType:'',localOverseas:'',status:'Planned',hiringDate:'',hiredDate:'',remarks:'',
+  return {id:null,qty:1,employeeName:null,position:'',company:'',department:'',collarType:'',employmentType:'',localOverseas:'',status:'Planned',hiringDate:'',hiredDate:'',hiringManager:'',reportingManager:'',vacancyType:'',businessCategory:'',remarks:'',
     costs:{oneTime:mk(keys.oneTime),monthlyRecurring:mk(keys.monthlyRecurring),twoYear:mk(keys.twoYear),annual:mk(keys.annual),monthly:mk(keys.monthly)}};
 }
 function openForm(id){
@@ -1468,9 +1525,13 @@ function openForm(id){
     fgSelect('Company','company',rec.company,['',...uniq('company')],true,true),
     fgSelect('Department','department',rec.department,['',...uniq('department')],true,true),
     fgText('Job title / position','position',rec.position,true),
+    fgText('Hiring manager','hiringManager',rec.hiringManager||'',true),
+    fgText('Reporting manager','reportingManager',rec.reportingManager||'',true),
+    fgSelect('Vacancy type','vacancyType',rec.vacancyType||'',['','Backfill','New Role'],false),
+    fgSelect('Business category','businessCategory',rec.businessCategory||'',['','Business Development','Service/Operations & Admin'],false),
     fgSelect('Status','status',rec.status,STATUSES,true),
-    fgDate('Hired date','hiredDate',rec.hiredDate||'',false),
-    fgDate('Hiring date','hiringDate',rec.hiringDate,true),
+    fgDate('Actual start date','hiredDate',rec.hiredDate||'',false),
+    fgDate('Request to hire','hiringDate',rec.hiringDate,true),
     fgNumber('Quantity','qty',rec.qty,1),
     fgSelect('Type','collarType',rec.collarType,['','Blue Collar','White Collar'],false),
     fgSelect('Employment','employmentType',rec.employmentType,['','Permanent','Contractual'],false),
@@ -1501,7 +1562,7 @@ function openForm(id){
   const hiredInp=body.querySelector('[data-field-key="hiredDate"]');
   if(statusSel && hiredInp){
     const hiredFg=hiredInp.closest('.fg');
-    hiredFg.querySelector('label').innerHTML='Hired date <span class="req">*</span> <span class="muted" style="font-weight:400">(cost starts here)</span>';
+    hiredFg.querySelector('label').innerHTML='Actual start date <span class="req">*</span> <span class="muted" style="font-weight:400">(cost starts here)</span>';
     const syncHired=()=>{ hiredFg.style.display = statusSel.value==='Hired'? '' : 'none'; };
     statusSel.addEventListener('change',()=>{ syncHired(); updateCalcPreview(); });
     syncHired();
@@ -1560,8 +1621,10 @@ function saveForm(){
   check('company', !!rec.company, 'Select a company');
   check('department', !!rec.department, 'Select a department');
   check('position', !!String(rec.position).trim(), 'Enter a position');
-  check('hiringDate', !!parseDate(rec.hiringDate), 'Enter a valid hiring date');
-  check('hiredDate', rec.status!=='Hired' || !!parseDate(rec.hiredDate), 'Hired date is mandatory when status is Hired');
+  check('hiringManager', !!String(rec.hiringManager||'').trim(), 'Enter the hiring manager');
+  check('reportingManager', !!String(rec.reportingManager||'').trim(), 'Enter the reporting manager');
+  check('hiringDate', !!parseDate(rec.hiringDate), 'Enter a valid request-to-hire date');
+  check('hiredDate', rec.status!=='Hired' || !!parseDate(rec.hiredDate), 'Actual start date is mandatory when status is Hired');
   if(rec.status!=='Hired') rec.hiredDate=null;
   // negative cost guard
   let neg=false; body.querySelectorAll('[data-bucket]').forEach(i=>{ if(Number(i.value)<0){neg=true;i.closest('.fg').classList.add('invalid');} });
@@ -1618,8 +1681,13 @@ function openDetail(id){
   let html='<div class="detail-grid">'+
     di('Company',rec.company)+di('Department',rec.department)+
     di('Status','<span class="badge-status '+statusClass(rec.status)+'">'+escapeHtml(rec.status)+'</span>')+
-    di('Hiring date',fmtDate(rec.hiringDate))+
-    (rec.status==='Hired'&&rec.hiredDate? di('Hired date (cost start)',fmtDate(rec.hiredDate)):'')+
+    di('Request to hire',fmtDate(rec.hiringDate))+
+    (rec.status==='Hired'&&rec.hiredDate? di('Actual start date (cost start)',fmtDate(rec.hiredDate)):'')+
+    (rec.status==='Hired'&&rec.hiredDate&&daysBetween(rec.hiringDate,rec.hiredDate)!=null? di('Days to start',daysBetween(rec.hiringDate,rec.hiredDate)+' days'):'')+
+    (rec.hiringManager? di('Hiring manager',rec.hiringManager):'')+
+    (rec.reportingManager? di('Reporting manager',rec.reportingManager):'')+
+    (rec.vacancyType? di('Vacancy type',rec.vacancyType):'')+
+    (rec.businessCategory? di('Business category',rec.businessCategory):'')+
     di('Type',rec.collarType||'—')+di('Employment',rec.employmentType||'—')+
     di('Quantity',rec.qty)+di('2-year cost','<span class="mono">'+aedTxt(two)+'</span>')+
     '</div>';
@@ -1671,14 +1739,14 @@ function download(filename, content, type){
   a.href=url; a.download=filename; document.body.appendChild(a); a.click();
   setTimeout(()=>{ document.body.removeChild(a); URL.revokeObjectURL(url); },100);
 }
-function exportExcel(){
+function exportExcel(asTemplate){
   if(typeof XLSX==='undefined'){ toast('Excel library not loaded — internet required for first load','bad'); return; }
   if(!state.vacancies.length){ toast('No vacancies to export','bad'); return; }
   const rows=state.vacancies.map(r=>{
     const o={
       'ID':r.id,'Qty':r.qty,'Employee Name':r.employeeName||'','Position':r.position,'Company':r.company,
       'Department':r.department,'Type':r.collarType||'','Employment':r.employmentType||'',
-      'Local/Overseas':r.localOverseas||'','Status':r.status,'Hiring Date':r.hiringDate||'','Hired Date':r.hiredDate||'','Remarks':r.remarks||''
+      'Local/Overseas':r.localOverseas||'','Status':r.status,'Request to Hire':r.hiringDate||'','Actual Start Date':r.hiredDate||'','Hiring Manager':r.hiringManager||'','Reporting Manager':r.reportingManager||'','Vacancy Type':r.vacancyType||'','Business Category':r.businessCategory||'','Remarks':r.remarks||''
     };
     const put=(bucket,tag)=>{ for(const [k,v] of Object.entries(r.costs[bucket]||{})) o[k+' ['+tag+']']=Number(v)||0; };
     put('oneTime','One-time'); put('monthlyRecurring','Monthly'); put('monthly','Monthly');
@@ -1694,9 +1762,129 @@ function exportExcel(){
     ws['!cols']=Object.keys(rows[0]).map(k=>({wch:Math.max(11,Math.min(26,k.length+2))}));
     const wb=XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb,ws,'Vacancies');
-    XLSX.writeFile(wb,'hiring-vacancies-full.xlsx');
-    toast('Excel exported — '+rows.length+' vacancies','good');
+    if(asTemplate){
+      const info=[
+        ['HR Hiring Dashboard — Excel template'],
+        [''],
+        ['How to use'],
+        ['1. Fill or edit rows in the "Vacancies" sheet. One row per vacancy/employee.'],
+        ['2. Keep the header row exactly as it is — the dashboard matches columns by name.'],
+        ['3. Dates: use YYYY-MM-DD (e.g. 2026-09-01) or normal Excel date cells.'],
+        ['4. Status must be one of: '+STATUSES.join(', ')+'.'],
+        ['5. If Status is "Hired", fill "Actual Start Date" — all costs start from that date.'],
+        ['6. Leave ID empty for new rows — the dashboard assigns VAC-YYYY-NNN automatically.'],
+        ['7. Cost columns are tagged by frequency: [One-time] once at start; [Monthly] every month; [Annual] every 12 months; [2-Year] every 24 months.'],
+        ['8. Computed columns (One-time Total, Monthly Total, Cost '+REF_YEAR+', 2-Year Employment Cost) are ignored on upload — the dashboard recalculates.'],
+        ['9. Upload the file back via the "Upload Excel" button in the dashboard top bar.'],
+      ];
+      const iws=XLSX.utils.aoa_to_sheet(info); iws['!cols']=[{wch:110}];
+      XLSX.utils.book_append_sheet(wb,iws,'Instructions');
+    }
+    XLSX.writeFile(wb, asTemplate? 'dashboard-data-template.xlsx' : 'hiring-vacancies-full.xlsx');
+    toast(asTemplate? 'Template exported — fill it and upload back' : 'Excel exported — '+rows.length+' vacancies','good');
   }catch(e){ toast('Excel export failed: '+e.message,'bad'); }
+}
+/* ---- Excel upload: rows -> vacancy records (template or original sheet format) ---- */
+function toISODate(v){
+  if(v==null||v==='') return '';
+  if(v instanceof Date && !isNaN(v)) return v.getFullYear()+'-'+String(v.getMonth()+1).padStart(2,'0')+'-'+String(v.getDate()).padStart(2,'0');
+  if(typeof v==='number'){ const d=new Date(Math.round((v-25569)*86400*1000)); return isNaN(d)?'':d.getUTCFullYear()+'-'+String(d.getUTCMonth()+1).padStart(2,'0')+'-'+String(d.getUTCDate()).padStart(2,'0'); }
+  const s=String(v).trim();
+  if(/^\d{4}-\d{1,2}-\d{1,2}/.test(s)){ const p=s.slice(0,10).split('-'); return p[0]+'-'+p[1].padStart(2,'0')+'-'+p[2].padStart(2,'0'); }
+  const d=new Date(s); return isNaN(d)?'':d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');
+}
+function num(v){ const n=Number(String(v==null?'':v).replace(/[^0-9.\-]/g,'')); return isFinite(n)? n:0; }
+const ORIGINAL_BUCKETS={
+  oneTime:['Visit Visa','Airfare Ticket','Recruitment Agency Fee'],
+  monthlyRecurring:['Accommodation','Transportation','Salary'],
+  twoYear:['Res. Visa & Labor card','Gratuity'],
+  annual:['Medical Ins.','GLPA Ins.','WC Ins.','ConnectHR Software','Airfare ticket allow.'],
+  monthly:['Postpaid Plan']
+};
+function rowsToVacancies(rows){
+  if(!rows.length) return {vacancies:[],mode:'empty'};
+  const headers=Object.keys(rows[0]);
+  const isTemplate=headers.some(h=>/\[(One-time|Monthly|Annual|2-Year)\]/.test(h)) || headers.includes('Position');
+  const findH=(name)=>headers.find(h=>h.trim().toLowerCase()===name.toLowerCase());
+  const get=(row,name)=>{ const h=findH(name); return h!=null? row[h] : ''; };
+  const out=[];
+  rows.forEach(row=>{
+    const rec=blankRecord();
+    if(isTemplate){
+      rec.id=String(get(row,'ID')||'').trim()||null;
+      rec.qty=Math.max(1,Math.round(num(get(row,'Qty'))||1));
+      rec.employeeName=String(get(row,'Employee Name')||'').trim()||null;
+      rec.position=String(get(row,'Position')||get(row,'Job Title')||'').trim();
+      rec.company=String(get(row,'Company')||'').trim();
+      rec.department=String(get(row,'Department')||'').trim();
+      rec.collarType=String(get(row,'Type')||'').trim();
+      rec.employmentType=String(get(row,'Employment')||get(row,'Employment Type')||'').trim();
+      rec.localOverseas=String(get(row,'Local/Overseas')||'').trim();
+      rec.status=STATUSES.includes(String(get(row,'Status')).trim())? String(get(row,'Status')).trim():'Planned';
+      rec.hiringDate=toISODate(get(row,'Request to Hire')||get(row,'Hiring Date')||get(row,'DATE'));
+      rec.hiredDate=toISODate(get(row,'Actual Start Date')||get(row,'Hired Date'))||null;
+      rec.hiringManager=String(get(row,'Hiring Manager')||'').trim();
+      rec.reportingManager=String(get(row,'Reporting Manager')||'').trim();
+      rec.vacancyType=String(get(row,'Vacancy Type')||'').trim();
+      rec.businessCategory=String(get(row,'Business Category')||'').trim();
+      rec.remarks=String(get(row,'Remarks')||'').trim();
+      headers.forEach(h=>{
+        const m=/^(.*?)\s*\[(One-time|Monthly|Annual|2-Year)\]$/.exec(h.trim());
+        if(!m) return;
+        const label=m[1].trim(); const tag=m[2]; const val=num(row[h]); if(!(val>0)) return;
+        const bucket= tag==='One-time'?'oneTime': tag==='Annual'?'annual': tag==='2-Year'?'twoYear':'monthlyRecurring';
+        rec.costs[bucket][label]=val;
+      });
+    }else{
+      // original workbook layout: match known cost heads by name
+      rec.qty=Math.max(1,Math.round(num(get(row,'QTY'))||1));
+      rec.employeeName=String(get(row,'Employee Name')||'').trim()||null;
+      rec.position=String(get(row,'Job Title')||'').trim();
+      rec.company=String(get(row,'Company')||'').trim();
+      rec.department=String(get(row,'Department')||'').trim();
+      rec.collarType=String(get(row,'Type')||'').trim();
+      rec.employmentType=String(get(row,'Employment Type')||'').trim();
+      rec.localOverseas=String(get(row,'Local/Overseas')||'').trim();
+      rec.hiringDate=toISODate(get(row,'DATE'));
+      for(const [bucket,names] of Object.entries(ORIGINAL_BUCKETS)){
+        names.forEach(n=>{
+          const h=headers.find(x=>x.trim().toLowerCase().startsWith(n.toLowerCase().slice(0,10)));
+          if(h){ const v=num(row[h]); if(v>0) rec.costs[bucket][n]=v; }
+        });
+      }
+    }
+    if(rec.company==='ME - KSA') rec.company='MGE - KSA';
+    if(!rec.position && !rec.company) return; // skip blank rows
+    out.push(rec);
+  });
+  // assign missing / duplicate IDs
+  const seen=new Set(out.filter(r=>r.id).map(r=>r.id));
+  out.forEach(r=>{
+    if(!r.id || (seen.has(r.id) && out.filter(x=>x.id===r.id).length>1 && out.indexOf(r)!==out.findIndex(x=>x.id===r.id))){
+      const d=parseDate(r.hiringDate); const yr=d?d.y:REF_YEAR;
+      let mx=0; out.concat(state.vacancies).forEach(v=>{ const m=/^VAC-(\d{4})-(\d+)$/.exec(v.id||''); if(m&&+m[1]===yr) mx=Math.max(mx,+m[2]); });
+      r.id='VAC-'+yr+'-'+String(mx+1).padStart(3,'0');
+    }
+    seen.add(r.id);
+  });
+  return {vacancies:out, mode:isTemplate?'template':'original'};
+}
+function importExcelFile(file){
+  if(typeof XLSX==='undefined'){ toast('Excel library not loaded — internet required','bad'); return; }
+  const reader=new FileReader();
+  reader.onload=()=>{
+    try{
+      const wb=XLSX.read(reader.result,{type:'array',cellDates:true});
+      const sheetName= wb.SheetNames.includes('Vacancies')? 'Vacancies' : wb.SheetNames[0];
+      const rows=XLSX.utils.sheet_to_json(wb.Sheets[sheetName],{defval:''});
+      const {vacancies,mode}=rowsToVacancies(rows);
+      if(!vacancies.length){ toast('No usable rows found in the Excel file','bad'); return; }
+      state.vacancies=vacancies.map(normalize);
+      persist(); render();
+      toast('Excel imported ('+mode+' format) — '+vacancies.length+' vacancies loaded across all dashboards','good');
+    }catch(e){ toast('Excel import failed: '+e.message,'bad'); }
+  };
+  reader.readAsArrayBuffer(file);
 }
 function exportJSON(backup){
   const out={metadata:Object.assign({},state.meta,{generatedAt:new Date().toISOString(),recordCount:state.vacancies.length,exportedBy:'HR Hiring app'}),columns:state.columns,vacancies:state.vacancies};
@@ -1910,6 +2098,7 @@ function wireGlobalEvents(){
   document.addEventListener('keydown',e=>{ if(e.key==='Escape'){ closeDrawer(); $('#searchResults').classList.remove('open'); } });
 }
 
+window.__hr = {rowsToVacancies, daysBetween, toISODate};
 boot();
 })();
 

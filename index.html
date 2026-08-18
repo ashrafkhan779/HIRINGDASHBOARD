@@ -392,6 +392,8 @@ const I = {
 /* ------------------------------------------------------------------ constants */
 const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
 const STATUSES = ['Planned','Open','Interviewing','Offer','Hired','On Hold','Cancelled'];
+const VAC_TYPES = ['Back Fill','New Role'];
+const BIZ_CATS = ['Business Development','Service/Operations','Admin'];
 const STORE_KEY = 'hrHiringApp.v1';
 const CHART_COLORS = ['#2f6fed','#1e9e6a','#c98a12','#7b5ea7','#178a94','#d1495b','#3a4a72','#e8875a','#5b8def','#9aa4bd'];
 const now = new Date();
@@ -406,10 +408,10 @@ const state = {
   vacancies: [],      // working set (original merged with local changes)
   dirty: false,
   route: 'overview',
-  filters: {year:'', month:'', company:'', department:'', status:'', type:''},
-  coFilters: {department:'', status:'', year:'', month:'', type:''},
-  deFilters: {company:'', status:'', year:'', month:'', type:''},
-  vacFilters: {company:'', department:'', position:'', status:'', month:'', year:'', search:'', type:''},
+  filters: {year:'', month:'', company:'', department:'', status:'', type:'', vtype:'', bcat:''},
+  coFilters: {department:'', status:'', year:'', month:'', type:'', vtype:'', bcat:''},
+  deFilters: {company:'', status:'', year:'', month:'', type:'', vtype:'', bcat:''},
+  vacFilters: {company:'', department:'', position:'', status:'', month:'', year:'', search:'', type:'', vtype:'', bcat:''},
   vacSort: {key:'id', dir:1},
   vacPage: 1,
   vacPerPage: 12,
@@ -418,6 +420,8 @@ const state = {
   selectedHiredCompany: null,
   hiredYear: '',
   hiredType: '',
+  hiredVType: '',
+  hiredBCat: '',
   charts: {},
   searchIdx: -1,
 };
@@ -537,9 +541,9 @@ function persist(){
 function renderDirty(){
   const foot = $('#sideFoot');
   if(state.dirty){
-    foot.innerHTML = '<span class="dirty-dot"></span>Unsaved local changes.<br>Export from <b>Data &amp; Settings</b> to keep them.';
+    foot.innerHTML = '<span class="dirty-dot"></span>Local changes saved in this browser.<br>Use <b>data.json</b> (top bar) to publish them.';
   }else{
-    foot.innerHTML = state.vacancies.length + ' vacancies loaded.<br>Data &amp; Settings to export or reset.';
+    foot.innerHTML = state.vacancies.length + ' vacancies loaded.<br>Top bar: download data.json / Excel, upload Excel.';
   }
 }
 
@@ -590,7 +594,9 @@ function normalize(v){
   v.hiringManager = v.hiringManager || '';
   v.reportingManager = v.reportingManager || '';
   v.vacancyType = v.vacancyType || '';
+  if(v.vacancyType==='Backfill') v.vacancyType='Back Fill';
   v.businessCategory = v.businessCategory || '';
+  if(v.businessCategory==='Service/Operations & Admin') v.businessCategory='Service/Operations';
   if(v.company==='ME - KSA') v.company='MGE - KSA';
   v.costs = v.costs || {oneTime:{},monthlyRecurring:{},twoYear:{},annual:{},monthly:{}};
   ['oneTime','monthlyRecurring','twoYear','annual','monthly'].forEach(k=>{ v.costs[k]=v.costs[k]||{}; });
@@ -618,6 +624,7 @@ function buildTopActions(){
   file.onchange=e=>{ const f=e.target.files[0]; if(f) importExcelFile(f); file.value=''; };
   bar.appendChild(mk(I.upload,'Upload Excel','Upload a filled Excel file — replaces and refreshes all dashboard data',()=>file.click(),true));
   bar.appendChild(file);
+  bar.appendChild(mk(I.refresh,'Reset','Discard local edits and reload the original data.json',()=>confirmReset()));
 }
 
 /* ------------------------------------------------------------------ nav */
@@ -625,9 +632,8 @@ const NAV = [
   {group:'Analyze', items:[['overview','Overview',I.grid],['monthly','Monthly Cost',I.calendar]]},
   {group:'Manage', items:[['vacancies','Vacancies',I.briefcase,true],['employees','Employees / Hires',I.users]]},
   {group:'Structure', items:[['companies','Companies',I.building],['departments','Departments',I.layers],['hired','Hired Employees',I.check]]},
-  {group:'System', items:[['settings','Data & Settings',I.settings]]},
-];
-const TITLES = {overview:'Overview',monthly:'Monthly Cost',vacancies:'Vacancies',employees:'Employees / Hires',companies:'Companies',departments:'Departments',hired:'Hired Employees',settings:'Data & Settings'};
+  ];
+const TITLES = {overview:'Overview',monthly:'Monthly Cost',vacancies:'Vacancies',employees:'Employees / Hires',companies:'Companies',departments:'Departments',hired:'Hired Employees'};
 function buildNav(){
   const nav=$('#nav'); nav.innerHTML='';
   NAV.forEach(g=>{
@@ -659,7 +665,6 @@ function render(){
     case 'companies': renderCompanies(c); break;
     case 'departments': renderDepartments(c); break;
     case 'hired': renderHired(c); break;
-    case 'settings': renderSettings(c); break;
   }
 }
 
@@ -672,6 +677,8 @@ function filteredForOverview(){
     if(f.department && v.department!==f.department) return false;
     if(f.status && v.status!==f.status) return false;
     if(f.type && v.collarType!==f.type) return false;
+    if(f.vtype && v.vacancyType!==f.vtype) return false;
+    if(f.bcat && v.businessCategory!==f.bcat) return false;
     const d=parseDate(v.hiringDate);
     if(f.month && (!d || d.m!==+f.month)) return false;
     // NOTE: Year is a cost-view selector (2026/2027/2028), not a hiring-date filter —
@@ -749,9 +756,11 @@ function renderOverview(c){
   fb.appendChild(selectFilt('Department','department',['',...uniq('department')]));
   fb.appendChild(selectFilt('Status','status',['',...STATUSES]));
   fb.appendChild(selectFilt('Type','type',['',...uniq('collarType')]));
+  fb.appendChild(selectFilt('Vacancy Type','vtype',['',...VAC_TYPES]));
+  fb.appendChild(selectFilt('Category','bcat',['',...BIZ_CATS]));
   const reset=el('button','btn ghost',I.refresh+'Reset filters');
   reset.style.marginLeft='auto';
-  reset.onclick=()=>{ state.filters={year:'',month:'',company:'',department:'',status:'',type:''}; render(); };
+  reset.onclick=()=>{ state.filters={year:'',month:'',company:'',department:'',status:'',type:'',vtype:'',bcat:''}; render(); };
   fb.appendChild(reset);
   c.appendChild(fb);
 
@@ -872,9 +881,11 @@ function renderMonthly(c){
   fb.appendChild(selectFilt('Company','company',['',...uniq('company')]));
   fb.appendChild(selectFilt('Department','department',['',...uniq('department')]));
   fb.appendChild(selectFilt('Type','type',['',...uniq('collarType')]));
+  fb.appendChild(selectFilt('Vacancy Type','vtype',['',...VAC_TYPES]));
+  fb.appendChild(selectFilt('Category','bcat',['',...BIZ_CATS]));
   const reset=el('button','btn ghost',I.refresh+'Reset filters');
   reset.style.marginLeft='auto';
-  reset.onclick=()=>{ state.filters.company=''; state.filters.department=''; state.filters.type=''; render(); };
+  reset.onclick=()=>{ state.filters.company=''; state.filters.department=''; state.filters.type=''; state.filters.vtype=''; state.filters.bcat=''; render(); };
   fb.appendChild(reset);
   c.appendChild(fb);
 
@@ -883,6 +894,8 @@ function renderMonthly(c){
     if(state.filters.company && v.company!==state.filters.company) return false;
     if(state.filters.department && v.department!==state.filters.department) return false;
     if(state.filters.type && v.collarType!==state.filters.type) return false;
+    if(state.filters.vtype && v.vacancyType!==state.filters.vtype) return false;
+    if(state.filters.bcat && v.businessCategory!==state.filters.bcat) return false;
     return true;
   });
   const card=el('div','card');
@@ -928,9 +941,11 @@ function renderVacancies(c){
   fb.appendChild(vacSelect('Year','year',['',...years().map(String)]));
   fb.appendChild(vacSelect('Month','month',['',...MONTHS.map((_,i)=>String(i+1))], v=>v===''?'All':MONTHS[v-1]));
   fb.appendChild(vacSelect('Type','type',['',...uniq('collarType')]));
+  fb.appendChild(vacSelect('Vacancy Type','vtype',['',...VAC_TYPES]));
+  fb.appendChild(vacSelect('Category','bcat',['',...BIZ_CATS]));
   const vreset=el('button','btn ghost',I.refresh+'Reset filters');
   vreset.style.marginLeft='auto';
-  vreset.onclick=()=>{ state.vacFilters={company:'',department:'',position:'',status:'',month:'',year:'',search:'',type:''}; state.vacPage=1; render(); };
+  vreset.onclick=()=>{ state.vacFilters={company:'',department:'',position:'',status:'',month:'',year:'',search:'',type:'',vtype:'',bcat:''}; state.vacPage=1; render(); };
   fb.appendChild(vreset);
   const xls=el('button','btn',I.download+'Excel');
   xls.title='Download all vacancies with full cost data (.xlsx)';
@@ -947,6 +962,8 @@ function renderVacancies(c){
     if(f.position&&v.position!==f.position) return false;
     if(f.status&&v.status!==f.status) return false;
     if(f.type&&v.collarType!==f.type) return false;
+    if(f.vtype&&v.vacancyType!==f.vtype) return false;
+    if(f.bcat&&v.businessCategory!==f.bcat) return false;
     const d=parseDate(v.hiringDate);
     if(f.year&&(!d||d.y!==+f.year)) return false;
     if(f.month&&(!d||d.m!==+f.month)) return false;
@@ -1049,9 +1066,11 @@ function renderEmployees(c){
   fb.appendChild(vacSelect('Position','position',['',...uniq('position')]));
   fb.appendChild(vacSelect('Status','status',['',...STATUSES]));
   fb.appendChild(vacSelect('Type','type',['',...uniq('collarType')]));
+  fb.appendChild(vacSelect('Vacancy Type','vtype',['',...VAC_TYPES]));
+  fb.appendChild(vacSelect('Category','bcat',['',...BIZ_CATS]));
   const ereset=el('button','btn ghost',I.refresh+'Reset filters');
   ereset.style.marginLeft='auto';
-  ereset.onclick=()=>{ state.vacFilters={company:'',department:'',position:'',status:'',month:'',year:'',search:'',type:''}; render(); };
+  ereset.onclick=()=>{ state.vacFilters={company:'',department:'',position:'',status:'',month:'',year:'',search:'',type:'',vtype:'',bcat:''}; render(); };
   fb.appendChild(ereset);
   c.appendChild(fb);
 
@@ -1061,6 +1080,8 @@ function renderEmployees(c){
     if(f.position&&v.position!==f.position) return false;
     if(f.status&&v.status!==f.status) return false;
     if(f.type&&v.collarType!==f.type) return false;
+    if(f.vtype&&v.vacancyType!==f.vtype) return false;
+    if(f.bcat&&v.businessCategory!==f.bcat) return false;
     return true;
   });
   const card=el('div','card');
@@ -1089,6 +1110,8 @@ function coFiltered(){
     if(f.department && v.department!==f.department) return false;
     if(f.status && v.status!==f.status) return false;
     if(f.type && v.collarType!==f.type) return false;
+    if(f.vtype && v.vacancyType!==f.vtype) return false;
+    if(f.bcat && v.businessCategory!==f.bcat) return false;
     return true;
   });
 }
@@ -1115,9 +1138,11 @@ function renderCompanies(c){
   fb.appendChild(coSelect('Department','department',['',...uniq('department')]));
   fb.appendChild(coSelect('Status','status',['',...STATUSES]));
   fb.appendChild(coSelect('Type','type',['',...uniq('collarType')]));
+  fb.appendChild(coSelect('Vacancy Type','vtype',['',...VAC_TYPES]));
+  fb.appendChild(coSelect('Category','bcat',['',...BIZ_CATS]));
   const reset=el('button','btn ghost',I.refresh+'Reset filters');
   reset.style.marginLeft='auto';
-  reset.onclick=()=>{ state.coFilters={department:'',status:'',year:'',month:'',type:''}; render(); };
+  reset.onclick=()=>{ state.coFilters={department:'',status:'',year:'',month:'',type:'',vtype:'',bcat:''}; render(); };
   fb.appendChild(reset);
   c.appendChild(fb);
 
@@ -1236,6 +1261,8 @@ function deFiltered(){
     if(f.company && v.company!==f.company) return false;
     if(f.status && v.status!==f.status) return false;
     if(f.type && v.collarType!==f.type) return false;
+    if(f.vtype && v.vacancyType!==f.vtype) return false;
+    if(f.bcat && v.businessCategory!==f.bcat) return false;
     return true;
   });
 }
@@ -1255,9 +1282,11 @@ function renderDepartments(c){
   fb.appendChild(deSelect('Company','company',['',...uniq('company')]));
   fb.appendChild(deSelect('Status','status',['',...STATUSES]));
   fb.appendChild(deSelect('Type','type',['',...uniq('collarType')]));
+  fb.appendChild(deSelect('Vacancy Type','vtype',['',...VAC_TYPES]));
+  fb.appendChild(deSelect('Category','bcat',['',...BIZ_CATS]));
   const reset=el('button','btn ghost',I.refresh+'Reset filters');
   reset.style.marginLeft='auto';
-  reset.onclick=()=>{ state.deFilters={company:'',status:'',year:'',month:'',type:''}; render(); };
+  reset.onclick=()=>{ state.deFilters={company:'',status:'',year:'',month:'',type:'',vtype:'',bcat:''}; render(); };
   fb.appendChild(reset);
   c.appendChild(fb);
 
@@ -1325,12 +1354,17 @@ function renderHired(c){
   tSel.innerHTML=th+'</select>';
   tSel.querySelector('select').onchange=e=>{ state.hiredType=e.target.value; render(); };
   fb.appendChild(tSel);
+  const mkSel=(label,val,opts,setter)=>{ const wrap=el('div','filt'); let h='<label>'+label+'</label><select>';
+    ['',...opts].forEach(o=>h+='<option value="'+escapeHtml(o)+'"'+(String(val)===String(o)?' selected':'')+'>'+(o===''?'All':escapeHtml(o))+'</option>');
+    wrap.innerHTML=h+'</select>'; wrap.querySelector('select').onchange=e=>{ setter(e.target.value); render(); }; return wrap; };
+  fb.appendChild(mkSel('Vacancy Type',state.hiredVType,VAC_TYPES,v=>state.hiredVType=v));
+  fb.appendChild(mkSel('Category',state.hiredBCat,BIZ_CATS,v=>state.hiredBCat=v));
   const hreset=el('button','btn ghost',I.refresh+'Reset filters');
   hreset.style.marginLeft='auto';
-  hreset.onclick=()=>{ state.hiredType=''; state.hiredYear=''; render(); };
+  hreset.onclick=()=>{ state.hiredType=''; state.hiredYear=''; state.hiredVType=''; state.hiredBCat=''; render(); };
   fb.appendChild(hreset);
   c.appendChild(fb);
-  const hired = state.vacancies.filter(v=>v.status==='Hired' && (!state.hiredType || v.collarType===state.hiredType));
+  const hired = state.vacancies.filter(v=>v.status==='Hired' && (!state.hiredType || v.collarType===state.hiredType) && (!state.hiredVType || v.vacancyType===state.hiredVType) && (!state.hiredBCat || v.businessCategory===state.hiredBCat));
   if(!hired.length){
     c.appendChild(emptyState(I.check,'No hired employees yet',
       'Mark a vacancy as "Hired" (with its mandatory hired date) in the Vacancies tab and it will appear here. All costs on this page start from the hired date.'));
@@ -1430,71 +1464,6 @@ function renderHired(c){
 }
 
 /* ============================================================================
-   SETTINGS / DATA
-   ========================================================================== */
-function renderSettings(c){
-  c.innerHTML='';
-  const grid=el('div','grid two-col');
-
-  // Export card
-  const exp=el('div','card');
-  exp.appendChild(cardHeader('Export',' download the current dataset (including local edits)'));
-  const eb=el('div','card-b');
-  eb.style.display='flex'; eb.style.flexWrap='wrap'; eb.style.gap='10px';
-  eb.appendChild(actBtn(I.download,'Export JSON',()=>exportJSON()));
-  eb.appendChild(actBtn(I.download,'Export Excel (all data + costs)',()=>exportExcel()));
-  eb.appendChild(actBtn(I.download,'Excel template (fill & upload)',()=>exportExcel(true)));
-  eb.appendChild(actBtn(I.download,'Export CSV (all)',()=>exportCSV('all')));
-  eb.appendChild(actBtn(I.download,'Monthly cost CSV',()=>exportMonthlyCSV()));
-  eb.appendChild(actBtn(I.download,'Backup (.json)',()=>exportJSON(true)));
-  exp.appendChild(eb);
-  grid.appendChild(exp);
-
-  // Import card
-  const imp=el('div','card');
-  imp.appendChild(cardHeader('Import','replace the dataset from a JSON file'));
-  const ib=el('div','card-b');
-  ib.innerHTML='<p class="muted" style="margin:0 0 12px;font-size:13px">Load a JSON file exported from this app (or produced by <code style="font-family:var(--mono)">convert.py</code>). This replaces the working dataset in your browser.</p>';
-  const file=el('input'); file.type='file'; file.accept='.json,application/json'; file.style.display='none';
-  const impBtn=actBtn(I.upload,'Choose JSON file…',()=>file.click());
-  file.onchange=e=>{ const f=e.target.files[0]; if(f) importJSON(f); file.value=''; };
-  const xfile=el('input'); xfile.type='file'; xfile.accept='.xlsx,.xls'; xfile.style.display='none';
-  const xBtn=actBtn(I.upload,'Upload Excel (replace all data)…',()=>xfile.click());
-  xfile.onchange=e=>{ const f=e.target.files[0]; if(f) importExcelFile(f); xfile.value=''; };
-  ib.appendChild(impBtn); ib.appendChild(file); ib.appendChild(xBtn); ib.appendChild(xfile);
-  imp.appendChild(ib);
-  grid.appendChild(imp);
-  c.appendChild(grid);
-
-  // Reset + status
-  const reset=el('div','card'); reset.style.marginTop='16px';
-  reset.appendChild(cardHeader('Data state',''));
-  const rb=el('div','card-b');
-  rb.innerHTML='<div class="detail-grid">'+
-    '<div class="d-item"><div class="d-l">Source</div><div class="d-v">'+escapeHtml(state.meta.source||'data.json')+'</div></div>'+
-    '<div class="d-item"><div class="d-l">Records</div><div class="d-v mono">'+state.vacancies.length+'</div></div>'+
-    '<div class="d-item"><div class="d-l">Currency</div><div class="d-v">'+escapeHtml(state.meta.currency||'AED')+'</div></div>'+
-    '<div class="d-item"><div class="d-l">Local changes</div><div class="d-v">'+(state.dirty?'<span style="color:var(--warn)">Unsaved — export to keep</span>':'None')+'</div></div>'+
-    '</div>';
-  const rbtn=actBtn(I.refresh,'Reset to original data.json',()=>confirmReset());
-  rbtn.className='btn danger'; rbtn.style.marginTop='14px';
-  rb.appendChild(rbtn);
-  reset.appendChild(rb);
-  c.appendChild(reset);
-
-  // GitHub note
-  const note=el('div','card'); note.style.marginTop='16px';
-  note.appendChild(cardHeader('How persistence works',''));
-  const nb=el('div','card-b');
-  nb.style.fontSize='13px'; nb.style.color='var(--text-2)'; nb.style.lineHeight='1.65';
-  nb.innerHTML='Add, edit and delete actions are saved to <b>this browser only</b> (localStorage). '+
-    'They do <b>not</b> change the <code style="font-family:var(--mono)">data.json</code> file in your GitHub repository. '+
-    'To make changes permanent for everyone: <b>Export JSON</b> here, then replace <code style="font-family:var(--mono)">data.json</code> in the repo and commit.';
-  note.appendChild(nb);
-  c.appendChild(note);
-}
-
-/* ============================================================================
    DRAWER — Add / Edit / Duplicate form
    ========================================================================== */
 let formState=null;
@@ -1527,8 +1496,8 @@ function openForm(id){
     fgText('Job title / position','position',rec.position,true),
     fgText('Hiring manager','hiringManager',rec.hiringManager||'',true),
     fgText('Reporting manager','reportingManager',rec.reportingManager||'',true),
-    fgSelect('Vacancy type','vacancyType',rec.vacancyType||'',['','Backfill','New Role'],false),
-    fgSelect('Business category','businessCategory',rec.businessCategory||'',['','Business Development','Service/Operations & Admin'],false),
+    fgSelect('Vacancy type','vacancyType',rec.vacancyType||'',['',...VAC_TYPES],false),
+    fgSelect('Business category','businessCategory',rec.businessCategory||'',['',...BIZ_CATS],false),
     fgSelect('Status','status',rec.status,STATUSES,true),
     fgDate('Actual start date','hiredDate',rec.hiredDate||'',false),
     fgDate('Request to hire','hiringDate',rec.hiringDate,true),
@@ -1770,7 +1739,7 @@ function exportExcel(asTemplate){
         ['1. Fill or edit rows in the "Vacancies" sheet. One row per vacancy/employee.'],
         ['2. Keep the header row exactly as it is — the dashboard matches columns by name.'],
         ['3. Dates: use YYYY-MM-DD (e.g. 2026-09-01) or normal Excel date cells.'],
-        ['4. Status must be one of: '+STATUSES.join(', ')+'.'],
+        ['4. Status must be one of: '+STATUSES.join(', ')+'. Vacancy Type: '+VAC_TYPES.join(' / ')+'. Business Category: '+BIZ_CATS.join(' / ')+'.'],
         ['5. If Status is "Hired", fill "Actual Start Date" — all costs start from that date.'],
         ['6. Leave ID empty for new rows — the dashboard assigns VAC-YYYY-NNN automatically.'],
         ['7. Cost columns are tagged by frequency: [One-time] once at start; [Monthly] every month; [Annual] every 12 months; [2-Year] every 24 months.'],

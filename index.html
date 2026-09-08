@@ -10,6 +10,7 @@
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-datalabels@2.2.0/dist/chartjs-plugin-datalabels.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <style>
 /* ============================================================
    DESIGN TOKENS — corporate HR SaaS: light surfaces, navy accents,
@@ -296,9 +297,41 @@ body{background:
 .tbl tr.row-selected td{background:#eef4ff;}
 .tbl tr.row-selected td:first-child{box-shadow:inset 3px 0 0 var(--accent);}
 
+
+/* ===================== Supabase authentication ===================== */
+.auth-gate{position:fixed;inset:0;z-index:500;background:
+  radial-gradient(900px 420px at 85% 0%,rgba(47,111,237,.14),transparent 58%),
+  linear-gradient(180deg,#f7f9fd,#eef2f8);display:none;place-items:center;padding:24px}
+.auth-card{width:min(430px,100%);background:#fff;border:1px solid var(--border);border-radius:18px;
+  box-shadow:0 24px 70px rgba(27,35,51,.16);padding:28px}
+.auth-brand{display:flex;align-items:center;gap:12px;margin-bottom:24px}
+.auth-logo{width:42px;height:42px;border-radius:11px;background:var(--accent);color:#fff;display:grid;place-items:center;font-weight:700}
+.auth-card h2{font-size:20px;margin-bottom:4px}.auth-card .auth-sub{color:var(--text-2);font-size:13px}
+.auth-field{display:flex;flex-direction:column;gap:6px;margin-top:14px}
+.auth-field label{font-size:12px;font-weight:600;color:var(--text-2)}
+.auth-field input{width:100%;padding:10px 12px;border:1px solid var(--border-strong);border-radius:8px;font:inherit}
+.auth-field input:focus{outline:none;border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-soft)}
+.auth-submit{width:100%;justify-content:center;margin-top:18px;padding:10px 14px}
+.auth-error{display:none;margin-top:12px;padding:9px 11px;border-radius:8px;background:var(--bad-bg);color:var(--bad);font-size:12.5px}
+.auth-error.show{display:block}.auth-note{margin-top:14px;color:var(--text-3);font-size:11.5px;text-align:center}
+.sync-pill{display:inline-flex;align-items:center;gap:6px;font-size:11px;color:var(--good);font-weight:600}
+.sync-pill::before{content:"";width:7px;height:7px;border-radius:50%;background:currentColor}
+
 </style>
 </head>
 <body>
+
+<div class="auth-gate" id="authGate">
+  <form class="auth-card" id="loginForm">
+    <div class="auth-brand"><div class="auth-logo">HR</div><div><h2>HR Hiring &amp; Cost</h2><div class="auth-sub">Sign in to access the shared workforce dashboard.</div></div></div>
+    <div class="auth-field"><label>Email</label><input id="loginEmail" type="email" autocomplete="username" required /></div>
+    <div class="auth-field"><label>Password</label><input id="loginPassword" type="password" autocomplete="current-password" required /></div>
+    <button class="btn primary auth-submit" id="loginButton" type="submit">Sign in</button>
+    <div class="auth-error" id="loginError"></div>
+    <div class="auth-note">Access is restricted to the shared HR/Admin account.</div>
+  </form>
+</div>
+
 <div id="loader"><div style="text-align:center"><div class="spinner"></div><div class="lt" id="loaderText">Loading hiring data…</div></div></div>
 
 <div class="app" id="app" style="display:none">
@@ -339,6 +372,8 @@ body{background:
 
 <script>
 window.APP_DATA_URL = 'data.json';
+window.SUPABASE_URL = 'https://wwyoanhcfwhuvigtlobl.supabase.co';
+window.SUPABASE_PUBLISHABLE_KEY = 'sb_publishable_wqMWH7jqQcPz4R2J9QopUw_D1dMy4Ya';
 /* Application logic is injected below (single-file build). */
 </script>
 <script>
@@ -530,21 +565,103 @@ function aggregate(records){
 }
 
 /* ============================================================================
-   STORAGE  (data.json + localStorage merge)
+   SHARED STORAGE — Supabase PostgreSQL
    ========================================================================== */
-function loadLocal(){ try{ const raw=localStorage.getItem(STORE_KEY); return raw? JSON.parse(raw):null; }catch(e){ return null; } }
-function persist(){
-  try{ localStorage.setItem(STORE_KEY, JSON.stringify({vacancies:state.vacancies, savedAt:new Date().toISOString()})); }
-  catch(e){ toast('Could not save locally: '+e.message,'bad'); }
-  state.dirty = true; renderDirty();
+let sb = null;
+let realtimeChannel = null;
+let uiWired = false;
+
+function initSupabase(){
+  if(!window.supabase || !window.supabase.createClient) throw new Error('Supabase client library did not load.');
+  sb = window.supabase.createClient(window.SUPABASE_URL, window.SUPABASE_PUBLISHABLE_KEY, {
+    auth:{persistSession:true,autoRefreshToken:true,detectSessionInUrl:true}
+  });
+}
+function dbRow(rec){ return {id:rec.id, record:rec}; }
+async function loadDatabase(){
+  let {data,error}=await sb.from('vacancies').select('id,record').order('id',{ascending:true});
+  if(error) throw error;
+
+  // One-time migration: when Supabase is empty, import the existing GitHub data.json.
+  if(!data || data.length===0){
+    try{
+      const res=await fetch(window.APP_DATA_URL,{cache:'no-store'});
+      if(res.ok){
+        const legacy=await res.json();
+        const legacyVacancies=Array.isArray(legacy)?legacy:(legacy.vacancies||[]);
+        if(legacyVacancies.length){
+          const normalized=legacyVacancies.map(normalize);
+          const {error:seedError}=await sb.from('vacancies').upsert(normalized.map(dbRow),{onConflict:'id'});
+          if(seedError) throw seedError;
+          state.meta=Object.assign({currency:'AED'},legacy.metadata||{});
+          state.columns=legacy.columns||[];
+          const reload=await sb.from('vacancies').select('id,record').order('id',{ascending:true});
+          if(reload.error) throw reload.error;
+          data=reload.data||[];
+        }
+      }
+    }catch(migrationError){
+      console.error('Initial data.json migration failed',migrationError);
+      throw new Error('Initial data.json import failed: '+migrationError.message);
+    }
+  }
+
+  state.vacancies=(data||[]).map(x=>normalize(x.record));
+  state.original=state.vacancies.map(v=>JSON.parse(JSON.stringify(v)));
+  state.meta=Object.assign({currency:'AED'},state.meta||{});
+  state.dirty=false; renderDirty();
+}
+async function saveRecord(rec){
+  const {error}=await sb.from('vacancies').upsert(dbRow(rec),{onConflict:'id'});
+  if(error) throw error;
+}
+async function deleteRecordDb(id){
+  const {error}=await sb.from('vacancies').delete().eq('id',id);
+  if(error) throw error;
+}
+async function replaceAllRecords(records){
+  const {data:existing,error:readErr}=await sb.from('vacancies').select('id');
+  if(readErr) throw readErr;
+  const wanted=new Set(records.map(r=>r.id));
+  const obsolete=(existing||[]).map(x=>x.id).filter(id=>!wanted.has(id));
+  if(obsolete.length){
+    const {error}=await sb.from('vacancies').delete().in('id',obsolete);
+    if(error) throw error;
+  }
+  if(records.length){
+    const {error}=await sb.from('vacancies').upsert(records.map(dbRow),{onConflict:'id'});
+    if(error) throw error;
+  }
 }
 function renderDirty(){
-  const foot = $('#sideFoot');
-  if(state.dirty){
-    foot.innerHTML = '<span class="dirty-dot"></span>Local changes saved in this browser.<br>Use <b>data.json</b> (top bar) to publish them.';
-  }else{
-    foot.innerHTML = state.vacancies.length + ' vacancies loaded.<br>Top bar: download data.json / Excel, upload Excel.';
-  }
+  const foot=$('#sideFoot'); if(!foot) return;
+  foot.innerHTML='<span class="sync-pill">Shared live database</span><br>'+state.vacancies.length+' vacancies synced via Supabase.';
+}
+function showLogin(message){
+  $('#loader').style.display='none';
+  $('#app').style.display='none';
+  $('#authGate').style.display='grid';
+  const e=$('#loginError');
+  if(message){e.textContent=message;e.classList.add('show');} else {e.textContent='';e.classList.remove('show');}
+}
+function hideLogin(){ $('#authGate').style.display='none'; }
+async function loginWithPassword(email,password){
+  const {error}=await sb.auth.signInWithPassword({email,password});
+  if(error) throw error;
+}
+async function logout(){
+  if(realtimeChannel){ try{await sb.removeChannel(realtimeChannel);}catch(e){} realtimeChannel=null; }
+  await sb.auth.signOut();
+  state.vacancies=[];
+  showLogin();
+}
+function subscribeRealtime(){
+  if(realtimeChannel) sb.removeChannel(realtimeChannel);
+  realtimeChannel=sb.channel('vacancies-live')
+    .on('postgres_changes',{event:'*',schema:'public',table:'vacancies'},async()=>{
+      try{ await loadDatabase(); if($('#app').style.display!=='none') render(); }
+      catch(e){ console.error('Realtime reload failed',e); toast('Live refresh failed: '+e.message,'bad'); }
+    }).subscribe();
 }
 
 /* ============================================================================
@@ -554,53 +671,50 @@ async function boot(){
   if(typeof Chart!=='undefined' && Chart.register && typeof ChartDataLabels!=='undefined'){
     try{ Chart.register(ChartDataLabels); if(Chart.defaults&&Chart.defaults.plugins) Chart.defaults.plugins.datalabels={display:false}; }catch(e){}
   }
-  buildNav();
-  $('#searchIcon').innerHTML = I.search;
-  $('#hamburger').innerHTML = I.menu;
-  buildTopActions();
-  $('#drawerClose').innerHTML = I.x;
-  wireGlobalEvents();
+  try{ initSupabase(); }catch(e){ showLogin(e.message); return; }
+
+  if(!uiWired){
+    buildNav();
+    $('#searchIcon').innerHTML=I.search;
+    $('#hamburger').innerHTML=I.menu;
+    buildTopActions();
+    $('#drawerClose').innerHTML=I.x;
+    wireGlobalEvents();
+    $('#loginForm').addEventListener('submit',async e=>{
+      e.preventDefault();
+      const btn=$('#loginButton'), err=$('#loginError');
+      btn.disabled=true; btn.textContent='Signing in…'; err.classList.remove('show');
+      try{
+        await loginWithPassword($('#loginEmail').value.trim(),$('#loginPassword').value);
+        $('#loginPassword').value='';
+        await startAuthenticatedApp();
+      }catch(ex){
+        err.textContent=ex.message||'Unable to sign in.';
+        err.classList.add('show');
+      }finally{ btn.disabled=false; btn.textContent='Sign in'; }
+    });
+    uiWired=true;
+  }
+
+  const {data:{session},error}=await sb.auth.getSession();
+  if(error){ showLogin(error.message); return; }
+  if(!session){ showLogin(); return; }
+  await startAuthenticatedApp();
+}
+async function startAuthenticatedApp(){
+  $('#loader').style.display='grid';
+  hideLogin();
   try{
-    const res = await fetch(window.APP_DATA_URL, {cache:'no-store'});
-    if(!res.ok) throw new Error('HTTP '+res.status);
-    const data = await res.json();
-    ingest(data);
+    await loadDatabase();
+    subscribeRealtime();
   }catch(err){
-    showLoadError(err); return;
+    $('#loader').style.display='none';
+    showLogin('Database setup is not complete: '+(err.message||err));
+    return;
   }
   $('#loader').style.display='none';
   $('#app').style.display='flex';
-  navigate('overview');
-}
-function ingest(data){
-  state.meta = data.metadata || {currency:'AED'};
-  state.columns = data.columns || [];
-  state.original = (data.vacancies||[]).map(normalize);
-  const local = loadLocal();
-  if(local && Array.isArray(local.vacancies) && local.vacancies.length){
-    state.vacancies = local.vacancies.map(normalize);
-    state.dirty = true;
-  }else{
-    state.vacancies = state.original.map(v=>JSON.parse(JSON.stringify(v)));
-    state.dirty = false;
-  }
-  renderDirty();
-}
-function normalize(v){
-  v = Object.assign({}, v);
-  v.qty = Number(v.qty)||1;
-  v.status = v.status || 'Planned';
-  v.hiredDate = v.hiredDate || null;
-  v.hiringManager = v.hiringManager || '';
-  v.reportingManager = v.reportingManager || '';
-  v.vacancyType = v.vacancyType || '';
-  if(v.vacancyType==='Backfill') v.vacancyType='Back Fill';
-  v.businessCategory = v.businessCategory || '';
-  if(v.businessCategory==='Service/Operations & Admin') v.businessCategory='Service/Operations';
-  if(v.company==='ME - KSA') v.company='MGE - KSA';
-  v.costs = v.costs || {oneTime:{},monthlyRecurring:{},twoYear:{},annual:{},monthly:{}};
-  ['oneTime','monthlyRecurring','twoYear','annual','monthly'].forEach(k=>{ v.costs[k]=v.costs[k]||{}; });
-  return v;
+  navigate(state.route||'overview');
 }
 function showLoadError(err){
   $('#loaderText').parentElement.innerHTML =
@@ -624,6 +738,7 @@ function buildTopActions(){
   file.onchange=e=>{ const f=e.target.files[0]; if(f) importExcelFile(f); file.value=''; };
   bar.appendChild(mk(I.upload,'Upload Excel','Upload a filled Excel file — replaces and refreshes all dashboard data',()=>file.click(),true));
   bar.appendChild(file);
+  bar.appendChild(mk(I.x,'Logout','Sign out of the shared HR dashboard',()=>logout()));
 }
 
 /* ------------------------------------------------------------------ nav */
@@ -1583,7 +1698,7 @@ function collectForm(validate){
   });
   return rec;
 }
-function saveForm(){
+async function saveForm(){
   const body=$('#drawerBody');
   // validation
   let ok=true;
@@ -1612,7 +1727,14 @@ function saveForm(){
     state.vacancies.push(rec);
     toast('Vacancy '+rec.id+' added','good');
   }
-  persist(); closeDrawer(); render();
+  try{
+    await saveRecord(rec);
+    closeDrawer(); render();
+  }catch(e){
+    toast('Save failed: '+e.message,'bad');
+    await loadDatabase().catch(()=>{});
+    render();
+  }
 }
 function nextId(hiringDate){
   const d=parseDate(hiringDate); const yr=d? d.y : REF_YEAR;
@@ -1620,11 +1742,12 @@ function nextId(hiringDate){
   state.vacancies.forEach(v=>{ const m=/^VAC-(\d{4})-(\d+)$/.exec(v.id||''); if(m && +m[1]===yr) max=Math.max(max,+m[2]); });
   return 'VAC-'+yr+'-'+String(max+1).padStart(3,'0');
 }
-function duplicateVacancy(id){
+async function duplicateVacancy(id){
   const src=state.vacancies.find(v=>v.id===id); if(!src) return;
   const copy=JSON.parse(JSON.stringify(src)); copy.id=nextId(src.hiringDate); copy.employeeName=null; copy.status='Planned';
-  state.vacancies.push(copy); persist(); render();
-  toast('Duplicated as '+copy.id,'good');
+  state.vacancies.push(copy); render();
+  try{ await saveRecord(copy); toast('Duplicated as '+copy.id,'good'); }
+  catch(e){ state.vacancies=state.vacancies.filter(v=>v.id!==copy.id); render(); toast('Duplicate failed: '+e.message,'bad'); }
 }
 function confirmDelete(id){
   const rec=state.vacancies.find(v=>v.id===id); if(!rec) return;
@@ -1632,11 +1755,14 @@ function confirmDelete(id){
   $('#drawerSub').textContent=rec.id;
   $('#drawerBody').innerHTML='<div style="padding:8px 0"><div class="i-ic ic-red" style="width:46px;height:46px;border-radius:12px;display:grid;place-items:center;margin-bottom:16px">'+I.trash+'</div>'+
     '<h3 style="font-size:16px;margin-bottom:8px">Are you sure you want to delete this vacancy?</h3>'+
-    '<p class="muted" style="font-size:13.5px">This removes <b>'+escapeHtml(rec.position)+'</b> ('+rec.id+') at '+escapeHtml(rec.company)+' from your local dataset. This cannot be undone (but you can reset to the original data.json from Settings).</p></div>';
+    '<p class="muted" style="font-size:13.5px">This removes <b>'+escapeHtml(rec.position)+'</b> ('+rec.id+') at '+escapeHtml(rec.company)+' from the shared database for every logged-in user. This cannot be undone.</p></div>';
   $('#drawerFoot').innerHTML='';
   const cancel=el('button','btn','Cancel'); cancel.onclick=closeDrawer;
   const del=el('button','btn danger',I.trash+'Delete vacancy');
-  del.onclick=()=>{ state.vacancies=state.vacancies.filter(v=>v.id!==id); persist(); closeDrawer(); render(); toast('Vacancy '+id+' deleted','good'); };
+  del.onclick=async()=>{ 
+    try{ await deleteRecordDb(id); state.vacancies=state.vacancies.filter(v=>v.id!==id); closeDrawer(); render(); toast('Vacancy '+id+' deleted','good'); }
+    catch(e){ toast('Delete failed: '+e.message,'bad'); }
+  };
   $('#drawerFoot').appendChild(cancel); $('#drawerFoot').appendChild(del);
   openDrawer();
 }
@@ -1844,7 +1970,7 @@ function rowsToVacancies(rows){
 function importExcelFile(file){
   if(typeof XLSX==='undefined'){ toast('Excel library not loaded — internet required','bad'); return; }
   const reader=new FileReader();
-  reader.onload=()=>{
+  reader.onload=async()=>{
     try{
       const wb=XLSX.read(reader.result,{type:'array',cellDates:true});
       const sheetName= wb.SheetNames.includes('Vacancies')? 'Vacancies' : wb.SheetNames[0];
@@ -1852,8 +1978,8 @@ function importExcelFile(file){
       const {vacancies,mode}=rowsToVacancies(rows);
       if(!vacancies.length){ toast('No usable rows found in the Excel file','bad'); return; }
       state.vacancies=vacancies.map(normalize);
-      persist(); render();
-      toast('Excel imported ('+mode+' format) — '+vacancies.length+' vacancies loaded across all dashboards','good');
+      await replaceAllRecords(state.vacancies); render();
+      toast('Excel imported ('+mode+' format) — '+vacancies.length+' vacancies synced to all users','good');
     }catch(e){ toast('Excel import failed: '+e.message,'bad'); }
   };
   reader.readAsArrayBuffer(file);
@@ -1882,7 +2008,7 @@ function exportMonthlyCSV(){
 }
 function importJSON(file){
   const reader=new FileReader();
-  reader.onload=()=>{
+  reader.onload=async()=>{
     try{
       const data=JSON.parse(reader.result);
       const vac=data.vacancies||data;
@@ -1890,7 +2016,7 @@ function importJSON(file){
       state.vacancies=vac.map(normalize);
       if(data.columns) state.columns=data.columns;
       if(data.metadata) state.meta=Object.assign(state.meta,data.metadata);
-      persist(); render(); toast('Imported '+state.vacancies.length+' vacancies','good');
+      await replaceAllRecords(state.vacancies); render(); toast('Imported '+state.vacancies.length+' vacancies to shared database','good');
     }catch(e){ toast('Import failed: '+e.message,'bad'); }
   };
   reader.readAsText(file);
@@ -1901,8 +2027,8 @@ function confirmReset(){
   $('#drawerBody').innerHTML='<div style="padding:8px 0"><div class="i-ic ic-amber" style="width:46px;height:46px;border-radius:12px;display:grid;place-items:center;margin-bottom:16px">'+I.refresh+'</div><h3 style="font-size:16px;margin-bottom:8px">Reset to the original data.json?</h3><p class="muted" style="font-size:13.5px">This discards all local add/edit/delete changes in this browser and reloads the original dataset. Export first if you want to keep your changes.</p></div>';
   $('#drawerFoot').innerHTML='';
   const cancel=el('button','btn','Cancel');cancel.onclick=closeDrawer;
-  const ok=el('button','btn danger',I.refresh+'Reset data');
-  ok.onclick=()=>{ localStorage.removeItem(STORE_KEY); state.vacancies=state.original.map(v=>JSON.parse(JSON.stringify(v))); state.dirty=false; renderDirty(); closeDrawer(); render(); toast('Reset to original data','good'); };
+  const ok=el('button','btn danger',I.refresh+'Reload shared data');
+  ok.onclick=async()=>{ try{ await loadDatabase(); closeDrawer(); render(); toast('Reloaded latest shared data','good'); } catch(e){ toast('Reload failed: '+e.message,'bad'); } };
   $('#drawerFoot').appendChild(cancel);$('#drawerFoot').appendChild(ok);
   openDrawer();
 }

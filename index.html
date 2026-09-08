@@ -564,6 +564,25 @@ function aggregate(records){
   return {oneTime, monthlyCommit, twoYear, count:records.length};
 }
 
+
+/* Normalize legacy / imported vacancy rows into the current application shape. */
+function normalize(v){
+  v = Object.assign({}, v || {});
+  v.qty = Number(v.qty) || 1;
+  v.status = v.status || 'Planned';
+  v.hiredDate = v.hiredDate || null;
+  v.hiringManager = v.hiringManager || '';
+  v.reportingManager = v.reportingManager || '';
+  v.vacancyType = v.vacancyType || '';
+  if(v.vacancyType === 'Backfill') v.vacancyType = 'Back Fill';
+  v.businessCategory = v.businessCategory || '';
+  if(v.businessCategory === 'Service/Operations & Admin') v.businessCategory = 'Service/Operations';
+  if(v.company === 'ME - KSA') v.company = 'MGE - KSA';
+  v.costs = v.costs || {oneTime:{}, monthlyRecurring:{}, twoYear:{}, annual:{}, monthly:{}};
+  ['oneTime','monthlyRecurring','twoYear','annual','monthly'].forEach(k => { v.costs[k] = v.costs[k] || {}; });
+  return v;
+}
+
 /* ============================================================================
    SHARED STORAGE — Supabase PostgreSQL
    ========================================================================== */
